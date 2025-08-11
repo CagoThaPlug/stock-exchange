@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 // Simple in-memory rate limiter (fixed window)
 const RATE_WINDOW_MS = 60_000; // 1 minute
