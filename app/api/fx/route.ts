@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 export const revalidate = 3600; // 1 hour
 
 export async function GET(req: NextRequest) {
