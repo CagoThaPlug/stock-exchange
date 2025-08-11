@@ -2,14 +2,13 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Search, TrendingUp, TrendingDown, Volume, DollarSign } from 'lucide-react';
-import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip } from 'recharts';
-import { debounce } from 'lodash';
 import { StockIcon } from '@/components/ui/stock-icon';
 import { useStockSelection } from '@/components/providers/StockSelectionProvider';
 import { usePreferences } from '@/components/providers/PreferencesProvider';
 import { formatCurrency, formatCompactCurrency } from '@/lib/format';
 import { translate } from '@/lib/i18n';
 import { useCurrency } from '@/components/providers/CurrencyProvider';
+import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip } from 'recharts';
 
 interface StockQuote {
   symbol: string;
@@ -27,6 +26,20 @@ interface ChartData {
   price: number;
 }
 
+interface SearchResult {
+  symbol: string;
+  name: string;
+  exchange?: string;
+}
+
+function debounce<F extends (...args: any[]) => void>(fn: F, delayMs: number) {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  return (...args: Parameters<F>) => {
+    if (timeoutId) clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => fn(...args), delayMs);
+  };
+}
+
 const POPULAR_STOCKS = [
   { symbol: 'AAPL', name: 'Apple Inc.' },
   { symbol: 'GOOGL', name: 'Alphabet Inc.' },
@@ -40,7 +53,7 @@ export function StockSearch() {
   const [query, setQuery] = useState('');
   const [selectedStock, setSelectedStock] = useState<StockQuote | null>(null);
   const [chartData, setChartData] = useState<ChartData[]>([]);
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const { selection, clearSelection } = useStockSelection();
@@ -61,7 +74,9 @@ export function StockSearch() {
       try {
         const res = await fetch(`/api/market/data?section=search&q=${encodeURIComponent(searchQuery)}`, { cache: 'no-store' });
         const data = await res.json();
-        const results = Array.isArray(data.results) ? data.results : [];
+        const results: SearchResult[] = Array.isArray(data.results)
+          ? (data.results as SearchResult[])
+          : [];
         setSearchResults(results);
         setShowDropdown(true);
       } catch {
@@ -189,7 +204,7 @@ export function StockSearch() {
             {searchResults.length === 0 && !loading && (
               <div className="px-4 py-3 text-sm text-muted-foreground">{translate(preferences.language, 'search.noResults', 'No results found')}</div>
             )}
-            {searchResults.map((stock) => (
+            {searchResults.map((stock: SearchResult) => (
               <button
                 key={stock.symbol}
                 onClick={() => {
