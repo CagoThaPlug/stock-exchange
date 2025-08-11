@@ -49,6 +49,15 @@ export function StockSearch() {
   const [hoveredPoint, setHoveredPoint] = useState<ChartData | null>(null);
   const lastHoverIndexRef = useRef<number | null>(null);
 
+  // Work around React type duplication from recharts bringing its own @types/react
+  const RC = ResponsiveContainer as unknown as React.ComponentType<any>;
+  const AC = AreaChart as unknown as React.ComponentType<any>;
+  const XAx = XAxis as unknown as React.ComponentType<any>;
+  const YAx = YAxis as unknown as React.ComponentType<any>;
+  const TT = Tooltip as unknown as React.ComponentType<any>;
+  const AR = Area as unknown as React.ComponentType<any>;
+  const CG = CartesianGrid as unknown as React.ComponentType<any>;
+
   const searchStocks = useCallback(
     debounce(async (searchQuery: string) => {
       if (!searchQuery.trim()) {
@@ -320,49 +329,47 @@ export function StockSearch() {
           <div className="bg-background rounded-lg p-4 border border-border">
             <h4 className="font-semibold mb-4">{translate(preferences.language, 'search.chartTitle', '30-Day Price Chart')}</h4>
             <div className="h-64" role="img" aria-label="30 day price chart">
-              <ResponsiveContainer width="100%" height="100%">
-                {(): JSX.Element => (
-                  <AreaChart
-                    data={chartData}
-                    onMouseMove={(state: any) => {
-                      const idx = state?.activeTooltipIndex;
-                      if (typeof idx === 'number' && chartData[idx]) {
-                        if (lastHoverIndexRef.current !== idx) {
-                          setHoveredPoint(chartData[idx]);
-                          lastHoverIndexRef.current = idx;
-                        }
+              <RC width="100%" height="100%">
+                <AC
+                  data={chartData}
+                  onMouseMove={(state: any) => {
+                    const idx = state?.activeTooltipIndex;
+                    if (typeof idx === 'number' && chartData[idx]) {
+                      if (lastHoverIndexRef.current !== idx) {
+                        setHoveredPoint(chartData[idx]);
+                        lastHoverIndexRef.current = idx;
                       }
+                    }
+                  }}
+                  onMouseLeave={() => {
+                    setHoveredPoint(null);
+                    lastHoverIndexRef.current = null;
+                  }}
+                >
+                  <defs>
+                    <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.25} />
+                      <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CG strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
+                  <XAx dataKey="time" axisLine={false} tickLine={false} tickMargin={8} hide={false} />
+                  <YAx axisLine={false} tickLine={false} tickMargin={8} width={56} />
+                  <TT
+                    content={({ active, payload }: any) => {
+                      if (!active || !payload?.length) return null;
+                      const p = payload[0].payload as ChartData;
+                      return (
+                        <div className="bg-popover border border-border rounded-md px-3 py-2 text-sm shadow">
+                          <div className="font-medium">{formatCurrency(p.price, { locale: preferences.locale, currency: preferences.currency })}</div>
+                          <div className="text-muted-foreground">{p.time}</div>
+                        </div>
+                      );
                     }}
-                    onMouseLeave={() => {
-                      setHoveredPoint(null);
-                      lastHoverIndexRef.current = null;
-                    }}
-                  >
-                    <defs>
-                      <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.25} />
-                        <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
-                    <XAxis dataKey="time" axisLine={false} tickLine={false} tickMargin={8} hide={false} />
-                    <YAxis axisLine={false} tickLine={false} tickMargin={8} width={56} />
-                    <Tooltip
-                      content={({ active, payload }: any) => {
-                        if (!active || !payload?.length) return null;
-                        const p = payload[0].payload as ChartData;
-                        return (
-                          <div className="bg-popover border border-border rounded-md px-3 py-2 text-sm shadow">
-                            <div className="font-medium">{formatCurrency(p.price, { locale: preferences.locale, currency: preferences.currency })}</div>
-                            <div className="text-muted-foreground">{p.time}</div>
-                          </div>
-                        );
-                      }}
-                    />
-                    <Area type="monotone" dataKey="price" stroke="hsl(var(--primary))" strokeWidth={2} fill="url(#priceGradient)" />
-                  </AreaChart>
-                )}
-              </ResponsiveContainer>
+                  />
+                  <AR type="monotone" dataKey="price" stroke="hsl(var(--primary))" strokeWidth={2} fill="url(#priceGradient)" />
+                </AC>
+              </RC>
             </div>
           </div>
         </div>
