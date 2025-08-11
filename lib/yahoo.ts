@@ -18,6 +18,7 @@ async function fetchWithTimeout(
         Accept: 'application/json, text/plain, */*',
         'Accept-Language': 'en-US,en;q=0.9',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+        Origin: 'https://finance.yahoo.com',
         Referer: 'https://finance.yahoo.com/',
         ...(headers || {}),
       },
@@ -35,7 +36,7 @@ async function fetchJson(url: string, opts?: RequestInit & { timeoutMs?: number 
   const res = await fetchWithTimeout(url, opts);
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(`Upstream ${res.status}: ${text}`);
+    throw new Error(`GET ${url} -> ${res.status}: ${text}`);
   }
   return res.json();
 }
@@ -89,7 +90,7 @@ async function search(q: string, _opts?: { quotesCount?: number; newsCount?: num
   return { quotes: Array.isArray(data?.quotes) ? data.quotes : [] };
 }
 
-async function chart(symbol: string, opts: { period1: Date; period2: Date; interval: string }): Promise<{ quotes: Array<{ date: Date; close: number }> }> {
+async function chart(symbol: string, opts: { period1: Date; period2: Date; interval: string }): Promise<{ quotes: Array<{ date: Date; close: number; volume?: number }> }> {
   const p1 = Math.floor(opts.period1.getTime() / 1000);
   const p2 = Math.floor(opts.period2.getTime() / 1000);
   const urls = [
@@ -110,18 +111,67 @@ async function chart(symbol: string, opts: { period1: Date; period2: Date; inter
   const result = data?.chart?.result?.[0];
   const timestamps: number[] = result?.timestamp || [];
   const closes: Array<number | null> = result?.indicators?.quote?.[0]?.close || [];
-  const quotes: Array<{ date: Date; close: number }> = [];
+  const volumes: Array<number | null> = result?.indicators?.quote?.[0]?.volume || [];
+  const quotes: Array<{ date: Date; close: number; volume?: number }> = [];
   for (let i = 0; i < timestamps.length; i++) {
     const t = timestamps[i];
     const c = closes[i];
     if (typeof c === 'number' && Number.isFinite(c)) {
-      quotes.push({ date: new Date(t * 1000), close: c });
+      const v = volumes?.[i];
+      quotes.push({ date: new Date(t * 1000), close: c, ...(typeof v === 'number' && Number.isFinite(v) ? { volume: v } : {}) });
     }
   }
   return { quotes };
 }
 
-const yahooFinance = { quote, screener, search, chart };
+async function quoteSummary(symbol: string, modules: string[]): Promise<any | null> {
+  const mod = modules.join(',');
+  const urls = [
+    `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=${encodeURIComponent(mod)}`,
+    `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=${encodeURIComponent(mod)}`,
+  ];
+  let data: any = null;
+  let lastError: unknown = null;
+  for (const u of urls) {
+    try {
+      data = await fetchJson(u);
+      break;
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  if (!data) return null;
+  const result = data?.quoteSummary?.result?.[0] || null;
+  return result;
+}
+
+async function fetchLatestSharesOutstanding(symbol: string): Promise<number | null> {
+  const params = `type=sharesOutstanding&merge=false&period1=0`;
+  const urls = [
+    `https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(symbol)}?${params}`,
+    `https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(symbol)}?${params}`,
+  ];
+  for (const u of urls) {
+    try {
+      const data = await fetchJson(u);
+      const arr = data?.timeseries?.result?.[0]?.sharesOutstanding;
+      if (Array.isArray(arr) && arr.length) {
+        // Find last entry with a numeric raw value
+        for (let i = arr.length - 1; i >= 0; i--) {
+          const raw = arr[i]?.reportedValue?.raw ?? arr[i]?.reportedValue ?? arr[i]?.raw;
+          if (typeof raw === 'number' && Number.isFinite(raw)) {
+            return raw;
+          }
+        }
+      }
+    } catch {
+      // try next url
+    }
+  }
+  return null;
+}
+
+const yahooFinance = { quote, screener, search, chart, quoteSummary, fetchLatestSharesOutstanding };
 
 export default yahooFinance;
 

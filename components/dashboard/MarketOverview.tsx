@@ -26,7 +26,8 @@ export function MarketOverview() {
   useEffect(() => {
     const load = async () => {
       try {
-        const res = await fetch('/api/market/data?section=indices', { cache: 'no-store' });
+        const debug = process.env.NEXT_PUBLIC_API_DEBUG ? '&debug=1' : '';
+        const res = await fetch(`/api/market/data?section=indices${debug}` , { cache: 'no-store' });
         const data = await res.json();
         const all: MarketIndex[] = Array.isArray(data.indices) ? data.indices : [];
         const shuffled = [...all].sort(() => Math.random() - 0.5);

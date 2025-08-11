@@ -26,7 +26,8 @@ export function MarketHeatmap() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/api/market/heatmap', { cache: 'no-store' });
+        const debug = process.env.NEXT_PUBLIC_API_DEBUG ? '?debug=1' : '';
+        const res = await fetch(`/api/market/heatmap${debug}`, { cache: 'no-store' });
         const data = await res.json();
         const items = Array.isArray(data.sectors) ? data.sectors : [];
         if (cancelled) return;

@@ -50,6 +50,37 @@ export async function fetchIndices(): Promise<MarketIndex[]> {
     }
   }
 
+  // If quotes are blocked (e.g., Yahoo 401), provide a minimal fallback using chart for core indices
+  if (results.length === 0) {
+    const core: Array<{ symbol: string; name: string }> = [
+      { symbol: '^GSPC', name: 'S&P 500' },
+      { symbol: '^DJI', name: 'Dow Jones' },
+      { symbol: '^IXIC', name: 'NASDAQ' },
+    ];
+    const fallbacks: MarketIndex[] = [];
+    for (const { symbol, name } of core) {
+      try {
+        const now = Date.now();
+        const dayMs = 24 * 60 * 60 * 1000;
+        const { quotes } = await yahooFinance.chart(symbol, {
+          period1: new Date(now - 7 * dayMs),
+          period2: new Date(now),
+          interval: '1d',
+        } as any);
+        const closes = (quotes || []).map((q: any) => Number(q.close)).filter((n: number) => Number.isFinite(n));
+        const last = closes[closes.length - 1];
+        const prev = closes[closes.length - 2];
+        if (!Number.isFinite(last) || !Number.isFinite(prev)) continue;
+        const change = last - prev;
+        const changePercent = prev !== 0 ? (change / prev) * 100 : 0;
+        fallbacks.push({ symbol, name, price: last, change, changePercent });
+      } catch {
+        // ignore this symbol
+      }
+    }
+    if (fallbacks.length) return fallbacks;
+  }
+
   return results.map((q: any) => ({
     symbol: q.symbol,
     name: q.shortName || q.longName || q.symbol,
@@ -116,19 +147,109 @@ export type Quote = {
 
 export async function fetchQuote(symbol: string): Promise<Quote | null> {
   if (!symbol?.trim()) return null;
-  const q: any = (await yahooFinance.quote(symbol)) as any;
-  return q
-    ? {
-        symbol: q.symbol,
-        name: q.shortName || q.longName || q.symbol,
-        price: Number(q.regularMarketPrice ?? 0),
-        change: Number(q.regularMarketChange ?? 0),
-        changePercent: Number(q.regularMarketChangePercent ?? 0),
-        volume: Number(q.regularMarketVolume ?? 0),
-        marketCap: Number(q.marketCap ?? 0),
-        sector: q.sector || undefined,
+  try {
+    const q: any = (await yahooFinance.quote(symbol)) as any;
+    if (!q) throw new Error('quote-null');
+    const base = {
+      symbol: q.symbol,
+      name: q.shortName || q.longName || q.symbol,
+      price: Number(q.regularMarketPrice ?? 0),
+      change: Number(q.regularMarketChange ?? 0),
+      changePercent: Number(q.regularMarketChangePercent ?? 0),
+      volume: Number(q.regularMarketVolume ?? 0),
+      marketCap: Number(q.marketCap ?? 0),
+      sector: q.sector || undefined,
+    } as Quote;
+    if (base.marketCap && base.volume) return base;
+    // Enrich with quoteSummary if partial
+    try {
+      const summary = await (yahooFinance as any).quoteSummary?.(symbol, ['price', 'summaryDetail', 'defaultKeyStatistics']).catch(() => null);
+      if (summary) {
+        base.marketCap = Number(
+          (summary?.price?.marketCap?.raw ??
+            summary?.defaultKeyStatistics?.marketCap?.raw ??
+            summary?.summaryDetail?.marketCap?.raw ??
+            base.marketCap) ?? 0
+        );
+        base.volume = Number(
+          (summary?.price?.regularMarketVolume?.raw ??
+            summary?.summaryDetail?.volume?.raw ??
+            summary?.summaryDetail?.averageDailyVolume3Month?.raw ??
+            base.volume) ?? 0
+        );
+        base.name = summary?.price?.shortName || summary?.price?.longName || base.name;
       }
-    : null;
+    } catch {}
+    if (base.marketCap && base.volume) return base;
+    // otherwise fall through to chart fallback to fill remaining
+    throw new Error('need-fallback');
+  } catch (err) {
+    // Fallbacks when quote API is blocked
+    try {
+      // Attempt quoteSummary for fundamentals (marketCap) and summaryDetail (volume)
+      const summary = await (yahooFinance as any).quoteSummary?.(symbol, ['price', 'summaryDetail', 'defaultKeyStatistics']).catch(() => null);
+
+      const now = Date.now();
+      const dayMs = 24 * 60 * 60 * 1000;
+      const res: any = await yahooFinance.chart(symbol, {
+        period1: new Date(now - 7 * dayMs),
+        period2: new Date(now),
+        interval: '1d',
+      } as any);
+      const quotes: Array<{ date: Date; close: number; volume?: number }> = Array.isArray(res?.quotes) ? res.quotes : [];
+      const closes = quotes.map((q) => Number(q.close)).filter((n) => Number.isFinite(n));
+      const last = closes[closes.length - 1];
+      const prev = closes[closes.length - 2];
+      if (!Number.isFinite(last) || !Number.isFinite(prev)) return null;
+      const change = last - prev;
+      const changePercent = prev !== 0 ? (change / prev) * 100 : 0;
+
+      // Pull marketCap and volume if present in summary
+      let mcap = Number(
+        summary?.price?.marketCap?.raw ??
+        summary?.defaultKeyStatistics?.marketCap?.raw ??
+        summary?.summaryDetail?.marketCap?.raw ?? 0
+      );
+      if (!Number.isFinite(mcap) || mcap === 0) {
+        // Approximate market cap using price * sharesOutstanding if present
+        let shares = Number(
+          summary?.defaultKeyStatistics?.sharesOutstanding?.raw ??
+          summary?.price?.sharesOutstanding?.raw ?? 0
+        );
+        if (!Number.isFinite(shares) || shares === 0) {
+          try {
+            const fetched = await (yahooFinance as any).fetchLatestSharesOutstanding?.(symbol);
+            if (typeof fetched === 'number' && Number.isFinite(fetched) && fetched > 0) shares = fetched;
+          } catch {}
+        }
+        if (Number.isFinite(shares) && shares > 0 && Number.isFinite(last) && last > 0) {
+          mcap = last * shares;
+        }
+      }
+      let vol = Number(
+        summary?.price?.regularMarketVolume?.raw ??
+        summary?.summaryDetail?.volume?.raw ??
+        summary?.summaryDetail?.averageDailyVolume3Month?.raw ?? 0
+      );
+      if (!Number.isFinite(vol) || vol === 0) {
+        const vols = quotes.map((q) => Number(q.volume)).filter((n) => Number.isFinite(n) && n > 0);
+        vol = vols[vols.length - 1] ?? 0;
+      }
+
+      return {
+        symbol,
+        name: summary?.price?.shortName || summary?.price?.longName || symbol,
+        price: last,
+        change,
+        changePercent,
+        volume: Number.isFinite(vol) ? vol : 0,
+        marketCap: Number.isFinite(mcap) ? mcap : 0,
+        sector: undefined,
+      };
+    } catch {
+      return null;
+    }
+  }
 }
 
 
