@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 const EN_TO_MODEL: Record<string, string> = {
   es: 'Helsinki-NLP/opus-mt-en-es',
