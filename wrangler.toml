@@ -1,13 +1,6 @@
 name = "stock-exchange"
 pages_build_output_dir = ".vercel/output/static"
-compatibility_date = "2024-01-01"
+compatibility_date = "2024-09-23"
 
 # Default compatibility flags
-compatibility_flags = ["nodejs_compat_populate_process_env"]
-
-# Environment-specific overrides if needed
-[env.production]
-compatibility_flags = ["nodejs_compat_populate_process_env"]
-
-[env.preview]
-compatibility_flags = ["nodejs_compat_populate_process_env"]
+compatibility_flags = ["nodejs_compat"]
