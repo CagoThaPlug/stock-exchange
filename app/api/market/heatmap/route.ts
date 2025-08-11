@@ -65,7 +65,8 @@ export async function GET(_req: NextRequest) {
 
     return NextResponse.json({ sectors });
   } catch (e) {
-    return NextResponse.json({ error: String((e as Error).message), sectors: [] }, { status: 502 });
+    // Do not bubble up a 502; return error in body with 200 to keep UI functional in production
+    return NextResponse.json({ error: String((e as Error).message), sectors: [] }, { status: 200 });
   }
 }
 

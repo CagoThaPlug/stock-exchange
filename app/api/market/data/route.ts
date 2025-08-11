@@ -52,13 +52,9 @@ export async function GET(req: NextRequest) {
     const indices = await fetchIndices();
     return NextResponse.json({ indices });
   } catch (e) {
-    // Return explicit errors so UI can show an error state
+    // Return explicit errors in body but keep 200 to avoid platform 502 HTML responses breaking fetch JSON parsing
     const message = String((e as Error).message || 'Upstream error');
-    if (section === 'movers') return NextResponse.json({ error: message }, { status: 502 });
-    if (section === 'search') return NextResponse.json({ error: message }, { status: 502 });
-    if (section === 'quote') return NextResponse.json({ error: message }, { status: 502 });
-    if (section === 'chart') return NextResponse.json({ error: message }, { status: 502 });
-    return NextResponse.json({ error: message }, { status: 502 });
+    return NextResponse.json({ error: message }, { status: 200 });
   }
 }
 

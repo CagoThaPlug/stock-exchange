@@ -32,9 +32,25 @@ export async function fetchIndices(): Promise<MarketIndex[]> {
     'CNC', 'XRAY', 'ES', 'NTRS', 'ESS', 'HCA', 'INFO', 'KMI', 'VRSN', 'ALLE',
     'PKI', 'VFC', 'MAA', 'DLTR', 'FTNT', 'ROK', 'FISV', 'ODFL', 'CLX', 'EVRG'
   ];
-  
-  const quoteRes = await yahooFinance.quote(symbols);
-  return quoteRes.map((q: any) => ({
+
+  // Chunk to avoid excessively long query strings and upstream 502s in edge
+  const chunkSize = 50;
+  const chunks: string[][] = [];
+  for (let i = 0; i < symbols.length; i += chunkSize) {
+    chunks.push(symbols.slice(i, i + chunkSize));
+  }
+
+  const results: any[] = [];
+  for (const c of chunks) {
+    try {
+      const res = await yahooFinance.quote(c);
+      results.push(...(Array.isArray(res) ? res : [res]));
+    } catch {
+      // skip failed chunk
+    }
+  }
+
+  return results.map((q: any) => ({
     symbol: q.symbol,
     name: q.shortName || q.longName || q.symbol,
     price: Number(q.regularMarketPrice ?? 0),
