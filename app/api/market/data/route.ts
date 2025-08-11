@@ -3,7 +3,7 @@ import { fetchIndices, fetchMovers, searchSymbols, fetchQuote, fetchChart } from
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 // Unified market data endpoint
 // Modes:

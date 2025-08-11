@@ -3,7 +3,7 @@ import yahooFinance from '@/lib/yahoo';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 // Simple sector → representative tickers map (large caps, diversified)
 const SECTOR_SYMBOLS: Record<string, string[]> = {
