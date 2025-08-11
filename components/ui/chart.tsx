@@ -34,6 +34,27 @@ function useChart() {
   return context;
 }
 
+// Loosely-typed content props to avoid Recharts/@types/react mismatches across environments
+type ChartTooltipContentProps = React.HTMLAttributes<HTMLDivElement> & {
+  active?: boolean;
+  payload?: Array<{
+    color?: string;
+    dataKey?: string;
+    name?: string;
+    value?: number | string;
+    payload?: any;
+  }>;
+  label?: any;
+  hideLabel?: boolean;
+  hideIndicator?: boolean;
+  indicator?: 'line' | 'dot' | 'dashed';
+  nameKey?: string;
+  labelKey?: string;
+  formatter?: any;
+  labelFormatter?: any;
+  color?: string;
+};
+
 const ChartContainer = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<'div'> & {
@@ -103,14 +124,7 @@ const ChartTooltip = RechartsPrimitive.Tooltip;
 
 const ChartTooltipContent = React.forwardRef<
   HTMLDivElement,
-  React.ComponentProps<typeof RechartsPrimitive.Tooltip> &
-    React.ComponentProps<'div'> & {
-      hideLabel?: boolean;
-      hideIndicator?: boolean;
-      indicator?: 'line' | 'dot' | 'dashed';
-      nameKey?: string;
-      labelKey?: string;
-    }
+  ChartTooltipContentProps
 >(
   (
     {
