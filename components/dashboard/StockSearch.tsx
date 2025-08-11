@@ -321,45 +321,47 @@ export function StockSearch() {
             <h4 className="font-semibold mb-4">{translate(preferences.language, 'search.chartTitle', '30-Day Price Chart')}</h4>
             <div className="h-64" role="img" aria-label="30 day price chart">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart
-                  data={chartData}
-                  onMouseMove={(state: any) => {
-                    const idx = state?.activeTooltipIndex;
-                    if (typeof idx === 'number' && chartData[idx]) {
-                      if (lastHoverIndexRef.current !== idx) {
-                        setHoveredPoint(chartData[idx]);
-                        lastHoverIndexRef.current = idx;
+                {(): JSX.Element => (
+                  <AreaChart
+                    data={chartData}
+                    onMouseMove={(state: any) => {
+                      const idx = state?.activeTooltipIndex;
+                      if (typeof idx === 'number' && chartData[idx]) {
+                        if (lastHoverIndexRef.current !== idx) {
+                          setHoveredPoint(chartData[idx]);
+                          lastHoverIndexRef.current = idx;
+                        }
                       }
-                    }
-                  }}
-                  onMouseLeave={() => {
-                    setHoveredPoint(null);
-                    lastHoverIndexRef.current = null;
-                  }}
-                >
-                  <defs>
-                    <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.25} />
-                      <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
-                  <XAxis dataKey="time" axisLine={false} tickLine={false} tickMargin={8} hide={false} />
-                  <YAxis axisLine={false} tickLine={false} tickMargin={8} width={56} />
-                  <Tooltip
-                    content={({ active, payload }: any) => {
-                      if (!active || !payload?.length) return null;
-                      const p = payload[0].payload as ChartData;
-                      return (
-                        <div className="bg-popover border border-border rounded-md px-3 py-2 text-sm shadow">
-                          <div className="font-medium">{formatCurrency(p.price, { locale: preferences.locale, currency: preferences.currency })}</div>
-                          <div className="text-muted-foreground">{p.time}</div>
-                        </div>
-                      );
                     }}
-                  />
-                  <Area type="monotone" dataKey="price" stroke="hsl(var(--primary))" strokeWidth={2} fill="url(#priceGradient)" />
-                </AreaChart>
+                    onMouseLeave={() => {
+                      setHoveredPoint(null);
+                      lastHoverIndexRef.current = null;
+                    }}
+                  >
+                    <defs>
+                      <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.25} />
+                        <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
+                    <XAxis dataKey="time" axisLine={false} tickLine={false} tickMargin={8} hide={false} />
+                    <YAxis axisLine={false} tickLine={false} tickMargin={8} width={56} />
+                    <Tooltip
+                      content={({ active, payload }: any) => {
+                        if (!active || !payload?.length) return null;
+                        const p = payload[0].payload as ChartData;
+                        return (
+                          <div className="bg-popover border border-border rounded-md px-3 py-2 text-sm shadow">
+                            <div className="font-medium">{formatCurrency(p.price, { locale: preferences.locale, currency: preferences.currency })}</div>
+                            <div className="text-muted-foreground">{p.time}</div>
+                          </div>
+                        );
+                      }}
+                    />
+                    <Area type="monotone" dataKey="price" stroke="hsl(var(--primary))" strokeWidth={2} fill="url(#priceGradient)" />
+                  </AreaChart>
+                )}
               </ResponsiveContainer>
             </div>
           </div>
