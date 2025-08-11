@@ -1,0 +1,6 @@
+name = "stock-exchange"
+
+# Instruct Cloudflare Pages to use the Next-on-Pages output
+pages_build_output_dir = ".vercel/output/static"
+
+
