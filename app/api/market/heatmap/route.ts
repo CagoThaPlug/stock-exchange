@@ -149,7 +149,11 @@ export async function GET(req: NextRequest) {
         const subset = symbols.slice(0, 6);
         const settled = await Promise.allSettled(subset.map((s) => computeChangePct(s)));
         const stocks = subset
-          .map((symbol, i) => ({ symbol, change: settled[i].status === 'fulfilled' ? Number(settled[i].value) : 0 }))
+          .map((symbol, i) => {
+            const r: any = settled[i] as any;
+            const change = r && r.status === 'fulfilled' ? Number(r.value) : 0;
+            return { symbol, change };
+          })
           .sort((a, b) => Math.abs(b.change) - Math.abs(a.change))
           .slice(0, 4);
         updated.push({ ...sector, stocks });
