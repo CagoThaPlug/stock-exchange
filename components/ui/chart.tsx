@@ -52,6 +52,7 @@ type ChartTooltipContentProps = React.HTMLAttributes<HTMLDivElement> & {
   labelKey?: string;
   formatter?: any;
   labelFormatter?: any;
+  labelClassName?: string;
   color?: string;
 };
 
