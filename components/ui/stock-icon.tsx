@@ -13,7 +13,7 @@ type StockIconProps = {
 export function StockIcon({ symbol, name, size = 24, className }: StockIconProps) {
   const [hasError, setHasError] = useState(false);
   const upper = (symbol || "?").toUpperCase();
-  const remoteSrc = `/api/logo?symbol=${encodeURIComponent(upper)}`;
+  const remoteSrc = `${process.env.NEXT_PUBLIC_API_BASE || 'https://api.zalc.dev'}/logo?symbol=${encodeURIComponent(upper)}`;
   const fallbackSrc = "/stock-placeholder.svg";
 
   if (hasError) {

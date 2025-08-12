@@ -28,7 +28,8 @@ export function NewsFeed() {
     const load = async () => {
       try {
         setLoading(true);
-        const res = await fetch(`/api/news?category=${encodeURIComponent(selectedCategory)}`, { cache: 'no-store', signal: controller.signal });
+        const { apiFetch } = await import('@/lib/utils');
+        const res = await apiFetch(`/api/news?category=${encodeURIComponent(selectedCategory)}`, { cache: 'no-store', signal: controller.signal });
         const data = await res.json();
         const items: any[] = Array.isArray(data.articles) ? data.articles : [];
         const mapped: NewsItem[] = items.map((a: any, idx: number) => ({
@@ -46,9 +47,10 @@ export function NewsFeed() {
           const translated = await Promise.all(
             mapped.slice(0, 12).map(async (n) => {
               try {
+                const { apiFetch } = await import('@/lib/utils');
                 const [tTitleRes, tSumRes] = await Promise.all([
-                  fetch('/api/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: n.title, targetLang: preferences.language }) }),
-                  n.summary ? fetch('/api/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: n.summary, targetLang: preferences.language }) }) : Promise.resolve(null),
+                  apiFetch('/api/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: n.title, targetLang: preferences.language }) }),
+                  n.summary ? apiFetch('/api/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: n.summary, targetLang: preferences.language }) }) : Promise.resolve(null),
                 ]);
                 const tTitleJson = await tTitleRes?.json();
                 const tSumJson = n.summary ? await tSumRes?.json() : null;

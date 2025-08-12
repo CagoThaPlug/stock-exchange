@@ -68,7 +68,8 @@ function TickerTapeInner({
     setError(null);
 
     try {
-      const url = new URL('/api/market/tape', window.location.origin);
+      const base = process.env.NEXT_PUBLIC_API_BASE || 'https://api.zalc.dev';
+      const url = new URL('/market/tape', base);
       url.searchParams.set('category', selectedCategory);
       url.searchParams.set('limit', maxItems.toString());
       

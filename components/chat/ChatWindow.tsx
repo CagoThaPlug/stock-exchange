@@ -74,7 +74,8 @@ export function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
     setInputValue('');
     setIsLoading(true);
     try {
-      const res = await fetch('/api/chat', {
+      const { apiFetch } = await import('@/lib/utils');
+      const res = await apiFetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: content, personality: preferences.aiPersonality }),
