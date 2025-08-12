@@ -34,21 +34,50 @@ export function TrendingStocks() {
         setLoading(true);
         const { apiFetch } = await import('@/lib/utils');
         const [g, l, a] = await Promise.all([
-          apiFetch('/api/market/data?section=movers&type=gainers', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ results: [] })),
-          apiFetch('/api/market/data?section=movers&type=losers', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ results: [] })),
-          apiFetch('/api/market/data?section=movers&type=actives', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ results: [] })),
+          apiFetch('/market/data?section=movers&type=gainers', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ movers: [] })),
+          apiFetch('/market/data?section=movers&type=losers', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ movers: [] })),
+          apiFetch('/market/data?section=movers&type=actives', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ movers: [] })),
         ]);
         if (abort) return;
+        
+        // Updated to use the correct response structure (movers instead of results)
         const mapped: TrendingStock[] = [
-          ...(g.results || []).slice(0, 8).map((q: any) => ({ symbol: q.symbol, name: q.name, price: q.price, change: q.change, changePercent: q.changePercent, volume: q.volume, category: 'gainers' as const })),
-          ...(l.results || []).slice(0, 8).map((q: any) => ({ symbol: q.symbol, name: q.name, price: q.price, change: q.change, changePercent: q.changePercent, volume: q.volume, category: 'losers' as const })),
-          ...(a.results || []).slice(0, 8).map((q: any) => ({ symbol: q.symbol, name: q.name, price: q.price, change: q.change, changePercent: q.changePercent, volume: q.volume, category: 'active' as const })),
+          ...(g.movers || []).slice(0, 8).map((q: any) => ({ 
+            symbol: q.symbol, 
+            name: q.name, 
+            price: q.price, 
+            change: q.change, 
+            changePercent: q.changePercent, 
+            volume: q.volume, 
+            category: 'gainers' as const 
+          })),
+          ...(l.movers || []).slice(0, 8).map((q: any) => ({ 
+            symbol: q.symbol, 
+            name: q.name, 
+            price: q.price, 
+            change: q.change, 
+            changePercent: q.changePercent, 
+            volume: q.volume, 
+            category: 'losers' as const 
+          })),
+          ...(a.movers || []).slice(0, 8).map((q: any) => ({ 
+            symbol: q.symbol, 
+            name: q.name, 
+            price: q.price, 
+            change: q.change, 
+            changePercent: q.changePercent, 
+            volume: q.volume, 
+            category: 'active' as const 
+          })),
         ];
         setStocks(mapped);
+      } catch (error) {
+        console.error('Failed to load market data:', error);
       } finally {
         if (!abort) setLoading(false);
       }
     };
+    
     load();
     const interval = setInterval(load, 60000);
     return () => { abort = true; clearInterval(interval); };
@@ -114,8 +143,15 @@ export function TrendingStocks() {
         </div>
       )}
 
+      {/* No Data State */}
+      {!loading && filteredStocks.length === 0 && (
+        <div className="text-center py-8">
+          <p className="text-muted-foreground">No market movers data available</p>
+        </div>
+      )}
+
       {/* Stocks List */}
-      {!loading && (
+      {!loading && filteredStocks.length > 0 && (
         <div className="space-y-2">
           {filteredStocks.map((stock, index) => (
             <button
@@ -158,10 +194,10 @@ export function TrendingStocks() {
       )}
 
       {/* Footer */}
-        <div className="mt-4 pt-4 border-t border-border">
-          <p className="text-xs text-muted-foreground text-center">
-            {translate(preferences.language, 'footer.refreshNote', 'Data refreshed every 15 minutes • Click stocks to view detailed analysis')}
-          </p>
+      <div className="mt-4 pt-4 border-t border-border">
+        <p className="text-xs text-muted-foreground text-center">
+          {translate(preferences.language, 'footer.refreshNote', 'Data refreshed every 15 minutes • Click stocks to view detailed analysis')}
+        </p>
       </div>
     </div>
   );

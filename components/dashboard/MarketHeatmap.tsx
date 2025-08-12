@@ -30,15 +30,37 @@ export function MarketHeatmap() {
         const { apiFetch } = await import('@/lib/utils');
         const res = await apiFetch(`/api/market/heatmap${debug}`, { cache: 'no-store' });
         const data = await res.json();
-        const items = Array.isArray(data.sectors) ? data.sectors : [];
+
+        const normalize = (raw: any): SectorData[] => {
+          if (Array.isArray(raw)) {
+            return raw.map((s: any) => ({
+              name: translate(preferences.language, `sector.${String(s.name || '').toLowerCase()}`, s.name || ''),
+              change: Number(s.change ?? 0),
+              marketCap: Number(s.marketCap ?? 0),
+              stocks: Array.isArray(s.stocks)
+                ? s.stocks.map((x: any) => ({ symbol: x.symbol, change: Number(x.change ?? 0) }))
+                : [],
+            }));
+          }
+          if (raw && typeof raw === 'object') {
+            const values = Object.values(raw as Record<string, any>);
+            return values.map((s: any) => ({
+              name: translate(preferences.language, `sector.${String(s.name || '').toLowerCase()}`, s.name || ''),
+              change: Number((s.change ?? s.changePercent) ?? 0),
+              marketCap: Number(s.marketCap ?? 0),
+              stocks: Array.isArray(s.stocks)
+                ? s.stocks.map((x: any) => ({ symbol: x.symbol, change: Number(x.change ?? 0) }))
+                : Array.isArray(s.topMovers)
+                  ? s.topMovers.map((x: any) => ({ symbol: x.symbol, change: Number((x.change ?? x.changePercent) ?? 0) }))
+                  : [],
+            }));
+          }
+          return [];
+        };
+
+        const normalized = normalize(data?.sectors);
         if (cancelled) return;
-        const mapped: SectorData[] = items.map((s: any) => ({
-          name: translate(preferences.language, `sector.${s.name.toLowerCase()}`, s.name),
-          change: Number(s.change || 0),
-          marketCap: Number(s.marketCap || 0),
-          stocks: Array.isArray(s.stocks) ? s.stocks.map((x: any) => ({ symbol: x.symbol, change: Number(x.change || 0) })) : [],
-        }));
-        setSectors(mapped);
+        setSectors(normalized);
       } catch {
         setSectors([]);
       }
@@ -56,9 +78,10 @@ export function MarketHeatmap() {
   };
 
   const getSectorSize = (marketCap: number): string => {
-    const maxCap = Math.max(...sectors.map(s => s.marketCap));
-    const ratio = marketCap / maxCap;
-    
+    const caps = sectors.map(s => Number(s.marketCap)).filter(n => Number.isFinite(n) && n > 0);
+    const maxCap = caps.length ? Math.max(...caps) : 1;
+    const ratio = maxCap > 0 ? marketCap / maxCap : 0;
+
     if (ratio > 0.8) return 'col-span-2 row-span-2';
     if (ratio > 0.6) return 'col-span-2 row-span-1';
     if (ratio > 0.4) return 'col-span-1 row-span-2';

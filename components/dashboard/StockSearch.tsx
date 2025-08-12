@@ -130,7 +130,12 @@ export function StockSearch() {
       ]);
 
       const q = quoteRes?.quote;
-      let ch: any[] = Array.isArray(chartRes?.chart) ? chartRes.chart : [];
+      let ch: any[] = [];
+      if (Array.isArray(chartRes?.chart)) {
+        ch = chartRes.chart;
+      } else if (chartRes?.chart?.points && Array.isArray(chartRes.chart.points)) {
+        ch = chartRes.chart.points;
+      }
 
       // If no chart points returned, try a wider range as fallback (still real data)
       if (!ch.length) {
@@ -140,7 +145,12 @@ export function StockSearch() {
           const alt = await apiFetch(`/api/market/data?section=chart&symbol=${encodeURIComponent(symbol)}&range=${r}&interval=${i}${debugParam}`, { cache: 'no-store' });
           if (!alt.ok) continue;
           const altJson = await alt.json();
-          const candidate = Array.isArray(altJson?.chart) ? altJson.chart : [];
+          let candidate: any[] = [];
+          if (Array.isArray(altJson?.chart)) {
+            candidate = altJson.chart;
+          } else if (altJson?.chart?.points && Array.isArray(altJson.chart.points)) {
+            candidate = altJson.chart.points;
+          }
           if (candidate.length) { ch = candidate; break; }
         }
       }
@@ -156,7 +166,19 @@ export function StockSearch() {
         sector: q?.sector || '—',
       };
 
-      const chartPoints: ChartData[] = ch.map((p: any) => ({ time: p.time, price: Number(p.price) }));
+      const chartPoints: ChartData[] = ch
+        .map((p: any) => {
+          const price = Number(p.price ?? p.close ?? p.adjclose ?? 0);
+          let timeStr = '';
+          if (p.time) {
+            timeStr = String(p.time);
+          } else if (p.timestamp) {
+            const ms = Number(p.timestamp) * 1000;
+            if (Number.isFinite(ms)) timeStr = new Date(ms).toISOString().split('T')[0];
+          }
+          return { time: timeStr, price } as ChartData;
+        })
+        .filter((pt) => Number.isFinite(pt.price) && pt.price > 0 && !!pt.time);
 
       setSelectedStock(resolvedQuote);
       setChartData(chartPoints);

@@ -23,6 +23,38 @@ export function NewsFeed() {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const { preferences } = usePreferences();
 
+  const extractPlainText = (htmlLike: string): string => {
+    if (!htmlLike || typeof htmlLike !== 'string') return '';
+    try {
+      // Works in client runtime (this is a client component)
+      const container = document.createElement('div');
+      container.innerHTML = htmlLike;
+      const anchor = container.querySelector('a');
+      const text = (anchor?.textContent || container.textContent || '').replace(/\s+/g, ' ').trim();
+      return text;
+    } catch {
+      // Fallback: strip tags via regex and collapse whitespace
+      return htmlLike.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+  };
+
+  const getHostname = (url: string): string => {
+    try {
+      const u = new URL(url);
+      return u.hostname.replace(/^www\./, '');
+    } catch {
+      return '';
+    }
+  };
+
+  const stripDomainFromText = (text: string, url: string): string => {
+    if (!text) return '';
+    const host = getHostname(url);
+    if (!host) return text;
+    const escaped = host.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return text.replace(new RegExp(`\\b(?:www\\.)?${escaped}\\b`, 'gi'), '').replace(/\s+/g, ' ').trim();
+  };
+
   useEffect(() => {
     const controller = new AbortController();
     const load = async () => {
@@ -32,17 +64,31 @@ export function NewsFeed() {
         const res = await apiFetch(`/api/news?category=${encodeURIComponent(selectedCategory)}`, { cache: 'no-store', signal: controller.signal });
         const data = await res.json();
         const items: any[] = Array.isArray(data.articles) ? data.articles : [];
-        const mapped: NewsItem[] = items.map((a: any, idx: number) => ({
-          id: a.id || String(idx),
-          title: a.title || 'Untitled',
-          summary: a.summary || a.description || '',
-          source: a.source?.name || a.source || 'News',
-          publishedAt: a.publishedAt || new Date().toISOString(),
-          url: a.url || '#',
-          sentiment: a.sentiment || 'neutral',
-          relevantStocks: a.relevantStocks || a.relevantSymbols || [],
-          category: selectedCategory === 'all' ? 'General' : selectedCategory,
-        }));
+        const mapped: NewsItem[] = items.map((a: any, idx: number) => {
+          const url = a.url || '#';
+          const title = extractPlainText(a.title || a.headline || 'Untitled');
+          let summary = extractPlainText(
+            a.summary || a.description || a.content || a.snippet || a.contentSnippet || ''
+          );
+          // Remove embedded domain/source remnants from summary
+          summary = stripDomainFromText(summary, url);
+          // Drop summary if it just repeats title or looks like a link-only blurb
+          if (!summary || summary === title || /https?:\/\//i.test(summary) || summary.length < 15) {
+            summary = '';
+          }
+          const source = extractPlainText(a.source?.name || a.source || getHostname(url) || 'News');
+          return {
+            id: a.id || String(idx),
+            title,
+            summary,
+            source,
+            publishedAt: a.publishedAt || new Date().toISOString(),
+            url,
+            sentiment: a.sentiment || 'neutral',
+            relevantStocks: a.relevantStocks || a.relevantSymbols || [],
+            category: selectedCategory === 'all' ? 'General' : selectedCategory,
+          } as NewsItem;
+        });
         if (preferences.autoTranslateNews && preferences.language !== 'en') {
           const translated = await Promise.all(
             mapped.slice(0, 12).map(async (n) => {
@@ -195,9 +241,11 @@ export function NewsFeed() {
                 {item.title}
               </a>
               
-              <p className="text-muted-foreground text-sm mb-3 leading-relaxed">
-                {item.summary}
-              </p>
+              {item.summary && (
+                <p className="text-muted-foreground text-sm mb-3 leading-relaxed">
+                  {item.summary}
+                </p>
+              )}
 
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-4">
