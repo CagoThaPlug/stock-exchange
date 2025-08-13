@@ -4,7 +4,7 @@ import { searchSymbols, fetchMovers } from '@/lib/market-data';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 type TickerItem = {
   symbol: string;
@@ -60,7 +60,13 @@ export async function GET(_req: NextRequest) {
     }
 
     // Fetch quotes in batch
-    const quotes = await yahooFinance.quote(candidates.map(c => c.symbol)).catch(() => [] as any[]);
+    let quotes: any[] = [];
+    try {
+      const batch = await yahooFinance.quote(candidates.map(c => c.symbol));
+      quotes = Array.isArray(batch) ? batch : (batch ? [batch] : []);
+    } catch {
+      quotes = [];
+    }
     const items: TickerItem[] = Array.isArray(quotes)
       ? quotes.map((q: any) => ({
           symbol: q.symbol,
