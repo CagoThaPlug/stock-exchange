@@ -56,4 +56,23 @@ export function formatCompactCurrency(
   }
 }
 
+export function formatCompactNumber(
+  value: number,
+  locale: string,
+  maximumFractionDigits: number = 1
+): string {
+  try {
+    return new Intl.NumberFormat(locale, {
+      notation: 'compact',
+      maximumFractionDigits,
+    }).format(value);
+  } catch {
+    const abs = Math.abs(value);
+    const divisor = abs >= 1e12 ? 1e12 : abs >= 1e9 ? 1e9 : abs >= 1e6 ? 1e6 : abs >= 1e3 ? 1e3 : 1;
+    const suffix = abs >= 1e12 ? 'T' : abs >= 1e9 ? 'B' : abs >= 1e6 ? 'M' : abs >= 1e3 ? 'K' : '';
+    const base = (value / divisor).toFixed(maximumFractionDigits);
+    return `${base}${suffix}`;
+  }
+}
+
 

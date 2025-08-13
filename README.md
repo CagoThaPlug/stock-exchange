@@ -16,8 +16,9 @@ Competition: [BridgeMind AI Competition](https://www.bridgemind.ai/competition)
   - AI Chat analyst with persona control (conservative/balanced/aggressive)
   - AI translation for multilingual UX (Hugging Face Inference API)
   - Heuristic news sentiment tagging for fast triage
-- Quality of stock market integration: 
-  - Real quotes, movers, search, and charts via yahoo-finance2 (server-side)
+- Quality of stock market integration:
+  - Real quotes, movers, search, and charts via Yahoo Finance (edge-safe fetch client)
+  - Cloudflare Pages Functions backend with resilient fallbacks and zero-config browser calls
   - Market heatmap, ticker tape, indices overview, FX conversion
 - Modern UI/UX: 
   - Clean, responsive UI with Tailwind + shadcn/ui patterns
@@ -56,9 +57,9 @@ Competition: [BridgeMind AI Competition](https://www.bridgemind.ai/competition)
 
 ## Tech Stack
 
-- Framework: Next.js 13 App Router (TypeScript)
+- Framework: Next.js App Router (TypeScript)
 - UI: Tailwind CSS, Radix/shadcn-inspired primitives, Lucide icons, Recharts
-- Data: yahoo-finance2 (server-side), ExchangeRate.host (FX)
+- Data: Yahoo Finance via edge-safe fetch client (`lib/yahoo.ts`), ExchangeRate.host (FX), Yahoo News + Google News RSS
 - AI: Groq Chat Completions API; Hugging Face Inference API for translation
 
 
@@ -77,10 +78,16 @@ Competition: [BridgeMind AI Competition](https://www.bridgemind.ai/competition)
   - `app/api/news/route.ts` Yahoo/Google aggregation + sentiment tagging
   - `app/api/translate/route.ts` Hugging Face MT (optional)
   - `app/api/fx/route.ts` FX rates (ExchangeRate.host)
-  - `app/api/logo/route.ts` company logo proxy with placeholder fallback
+  - Cloudflare Pages Functions (used in production on Cloudflare Pages)
+    - `functions/api/market/data.ts`
+    - `functions/api/market/heatmap.ts`
+    - `functions/api/market/tape.ts`
+    - `functions/api/news.ts`
+    - `functions/api/translate.ts`
+    - `functions/api/fx.ts`
 - Server utilities
-  - `lib/market-data.ts` unified market data helpers
-  - `lib/yahoo.ts` shared yahoo-finance2 config (cookie jar, quiet logger)
+  - `lib/market-data.ts` unified market data helpers (indices, movers, quote, chart, search)
+  - `lib/yahoo.ts` edge-safe Yahoo client (fetch-based; charts/quotes/search/summary/series)
 
 
 ## AI Integration Details
@@ -104,7 +111,7 @@ Competition: [BridgeMind AI Competition](https://www.bridgemind.ai/competition)
   - Env required: `GROQ_API_KEY`
 - `GET /api/market/data?section=indices|movers|search|quote|chart&...`
   - `indices` → `{ indices }`
-  - `movers&type=gainers|losers|actives` → `{ results }`
+  - `movers&type=gainers|losers|actives` → `{ movers }`
   - `search&q=TSLA` → `{ results }`
   - `quote&symbol=TSLA` → `{ quote }`
   - `chart&symbol=TSLA&range=1mo&interval=1d` → `{ chart }`
@@ -113,7 +120,9 @@ Competition: [BridgeMind AI Competition](https://www.bridgemind.ai/competition)
 - `GET /api/news?category=all|Technology|Finance|...` → `{ articles }`
 - `POST /api/translate` → `{ translated }` (optional token)
 - `GET /api/fx?base=USD` → `{ base, rates, date }`
-- `GET /api/logo?symbol=AAPL` → proxied PNG or SVG placeholder
+
+Notes:
+- Append `&debug=1` to most endpoints to receive a `__debug` object with Cloudflare headers (useful when deployed on Pages).
 
 
 ## Environment Variables
@@ -123,6 +132,8 @@ Create `project/.env.local` with:
 ```
 GROQ_API_KEY=your_groq_api_key_here           # required for AI chat
 HF_TOKEN=your_huggingface_token_here          # optional (or use HUGGINGFACE_API_KEY)
+# Optional: override API base for client fetches (default is same-origin)
+# NEXT_PUBLIC_API_BASE=https://your-api.example.com
 ```
 
 Notes:
@@ -160,12 +171,35 @@ Open http://localhost:3000
 - Educational use only — this app does not provide financial advice
 
 
+## Deploying to Cloudflare Pages
+
+This repo is configured for Cloudflare Pages with Pages Functions.
+
+- Build command: `npm run cf:build` (uses `@cloudflare/next-on-pages`)
+- Output directory: `.vercel/output/static`
+- Functions directory: `functions/` (auto-detected by Pages)
+- Config: `wrangler.toml` (includes `nodejs_compat`)
+
+Environment variables to set on Pages (Project → Settings → Variables):
+- `GROQ_API_KEY` (required for chat)
+- `HF_TOKEN` or `HUGGINGFACE_API_KEY` (optional for translation)
+
+Notes:
+- Cloudflare’s runtime does not implement the `cache` field on `fetch` RequestInit. Client/server fetches in this repo avoid that field.
+- The app uses same-origin API calls by default via `apiFetch`, so you don’t need a separate API origin.
+
+
 ## Development Notes
 
 - Styling: Tailwind CSS + utility-first components
 - Charts: Recharts (client-side only; small datasets)
 - i18n: lightweight runtime `translate(...)` helper with optional AI translation
 - Linting: ESLint config present; build does not block on lint
+
+Market data fallbacks:
+- Quotes: enrich with `quoteSummary` when partial.
+- Market cap: approximated as `price × sharesOutstanding` using multiple fundamentals time series when top-level fields are missing.
+- Charts: alternate ranges/intervals tried when primary request returns no points.
 
 
 ## Roadmap (post-competition ideas)

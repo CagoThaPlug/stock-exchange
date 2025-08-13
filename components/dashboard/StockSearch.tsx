@@ -5,7 +5,7 @@ import { Search, TrendingUp, TrendingDown, Volume, DollarSign } from 'lucide-rea
 import { StockIcon } from '@/components/ui/stock-icon';
 import { useStockSelection } from '@/components/providers/StockSelectionProvider';
 import { usePreferences } from '@/components/providers/PreferencesProvider';
-import { formatCurrency, formatCompactCurrency } from '@/lib/format';
+import { formatCurrency, formatCompactCurrency, formatCompactNumber } from '@/lib/format';
 import { translate } from '@/lib/i18n';
 import { useCurrency } from '@/components/providers/CurrencyProvider';
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip } from 'recharts';
@@ -340,7 +340,7 @@ export function StockSearch() {
                 <Volume className="w-4 h-4 text-primary" />
                 <span className="text-sm font-medium">{translate(preferences.language, 'search.volume', 'Volume')}</span>
               </div>
-              <p className="text-xl font-bold">{selectedStock.volume.toLocaleString()}</p>
+              <p className="text-xl font-bold">{formatCompactNumber(selectedStock.volume, preferences.locale)}</p>
             </div>
 
             <div className="bg-background rounded-lg p-4 border border-border">
