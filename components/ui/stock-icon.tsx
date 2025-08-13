@@ -8,23 +8,37 @@ type StockIconProps = {
   name?: string;
   size?: number;
   className?: string;
+  variant?: 'local' | 'remote';
 };
 
-export function StockIcon({ symbol, name, size = 24, className }: StockIconProps) {
+export function StockIcon({ symbol, name, size = 24, className, variant = 'local' }: StockIconProps) {
   const [hasError, setHasError] = useState(false);
   const [sourceIndex, setSourceIndex] = useState(0);
   const upper = (symbol || "?").toUpperCase();
 
-  // Always use local API route to avoid cross-domain calls
-  const apiBase = '';
-  const candidates: string[] = Array.from(
-    new Set([
-      `${apiBase}/api/logo?symbol=${encodeURIComponent(upper)}`,
-      `${apiBase}/api/logo?symbol=${encodeURIComponent(upper.replaceAll('.', '-'))}`,
-      `${apiBase}/api/logo?symbol=${encodeURIComponent(upper.split('.')[0])}`,
-      `${apiBase}/api/logo?symbol=${encodeURIComponent(upper.split('-')[0])}`,
-    ])
-  );
+  let candidates: string[] = [];
+  if (variant === 'local') {
+    const apiBase = '';
+    candidates = Array.from(
+      new Set([
+        `${apiBase}/api/logo?symbol=${encodeURIComponent(upper)}`,
+        `${apiBase}/api/logo?symbol=${encodeURIComponent(upper.replaceAll('.', '-'))}`,
+        `${apiBase}/api/logo?symbol=${encodeURIComponent(upper.split('.')[0])}`,
+        `${apiBase}/api/logo?symbol=${encodeURIComponent(upper.split('-')[0])}`,
+      ])
+    );
+  } else {
+    const base = 'https://financialmodelingprep.com/image-stock';
+    const sanitized = upper.replace(/[^A-Z0-9.\-]/g, '');
+    candidates = Array.from(
+      new Set([
+        `${base}/${encodeURIComponent(sanitized)}.png`,
+        `${base}/${encodeURIComponent(sanitized.replaceAll('.', '-'))}.png`,
+        `${base}/${encodeURIComponent(sanitized.split('.')[0])}.png`,
+        `${base}/${encodeURIComponent(sanitized.split('-')[0])}.png`,
+      ])
+    );
+  }
 
   const currentSrc = candidates[Math.min(sourceIndex, candidates.length - 1)];
 

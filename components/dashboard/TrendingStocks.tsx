@@ -161,7 +161,7 @@ export function TrendingStocks() {
             >
               {/* Stock Info */}
               <div className="flex items-center space-x-3">
-                <StockIcon symbol={stock.symbol} name={stock.name} size={32} />
+                <StockIcon symbol={stock.symbol} name={stock.name} size={32} variant="remote" />
                 <div>
                   <p className="font-semibold text-sm">{stock.symbol}</p>
                   <p className="text-xs text-muted-foreground truncate max-w-[120px]">
