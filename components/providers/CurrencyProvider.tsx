@@ -50,7 +50,7 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
       setError(undefined);
       try {
         const { apiFetch } = await import('@/lib/utils');
-        const res = await apiFetch(`/api/fx?base=USD`, { cache: 'no-store' });
+        const res = await apiFetch(`/api/fx?base=USD`);
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error || `Failed loading FX rates`);
         const r = data?.rates?.[target];

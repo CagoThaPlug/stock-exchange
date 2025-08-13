@@ -89,7 +89,7 @@ export function NewsFeed() {
       try {
         setLoading(true);
         const { apiFetch } = await import('@/lib/utils');
-        const res = await apiFetch(`/api/news?category=${encodeURIComponent(selectedCategory)}`, { cache: 'no-store', signal: controller.signal });
+        const res = await apiFetch(`/api/news?category=${encodeURIComponent(selectedCategory)}`, { signal: controller.signal });
         const data = await res.json();
         const items: any[] = Array.isArray(data.articles) ? data.articles : [];
         const mapped: NewsItem[] = items.map((a: any, idx: number) => {

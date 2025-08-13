@@ -48,7 +48,6 @@ export async function GET(req: NextRequest) {
           headers: {
             ...debugHeaders(req),
             'Access-Control-Allow-Origin': '*',
-            'Cache-Control': 'no-store',
           },
         }
       );

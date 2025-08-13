@@ -28,7 +28,7 @@ export function MarketHeatmap() {
       try {
         const debug = process.env.NEXT_PUBLIC_API_DEBUG ? '?debug=1' : '';
         const { apiFetch } = await import('@/lib/utils');
-        const res = await apiFetch(`/api/market/heatmap${debug}`, { cache: 'no-store' });
+        const res = await apiFetch(`/api/market/heatmap${debug}`);
         const data = await res.json();
 
         const normalize = (raw: any): SectorData[] => {

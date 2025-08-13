@@ -35,7 +35,6 @@ export async function onRequestGet(context: { request: Request }) {
         headers: {
           ...debugHeaders(request),
           'Access-Control-Allow-Origin': '*',
-          'Cache-Control': 'no-store',
         },
       });
     }

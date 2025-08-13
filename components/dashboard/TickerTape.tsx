@@ -73,7 +73,6 @@ function TickerTapeInner({
       params.set('category', selectedCategory);
       params.set('limit', maxItems.toString());
       const res = await apiFetch(`/api/market/tape?${params.toString()}`, {
-        cache: 'no-store',
         signal: controllerRef.current.signal,
         headers: { 'Accept': 'application/json' },
       });

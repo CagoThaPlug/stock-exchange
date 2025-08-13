@@ -22,7 +22,6 @@ async function fetchWithTimeout(
         Referer: 'https://finance.yahoo.com/',
         ...(headers || {}),
       },
-      cache: 'no-store',
       redirect: 'follow',
       signal: controller.signal,
     });

@@ -83,7 +83,7 @@ export function StockSearch() {
       try {
         const debug = process.env.NEXT_PUBLIC_API_DEBUG ? '&debug=1' : '';
         const { apiFetch } = await import('@/lib/utils');
-        const res = await apiFetch(`/api/market/data?section=search&q=${encodeURIComponent(searchQuery)}${debug}`, { cache: 'no-store' });
+        const res = await apiFetch(`/api/market/data?section=search&q=${encodeURIComponent(searchQuery)}${debug}`);
         const data = await res.json();
         const results: SearchResult[] = Array.isArray(data.results)
           ? (data.results as SearchResult[])
@@ -125,8 +125,8 @@ export function StockSearch() {
       const debugParam = process.env.NEXT_PUBLIC_API_DEBUG ? '&debug=1' : '';
       const { apiFetch } = await import('@/lib/utils');
       const [quoteRes, chartRes] = await Promise.all([
-        apiFetch(`/api/market/data?section=quote&symbol=${encodeURIComponent(symbol)}${debugParam}`, { cache: 'no-store' }).then(async r => (r.ok ? r.json() : Promise.reject(await r.text()))),
-        apiFetch(`/api/market/data?section=chart&symbol=${encodeURIComponent(symbol)}&range=1mo&interval=1d${debugParam}`, { cache: 'no-store' }).then(async r => (r.ok ? r.json() : Promise.reject(await r.text()))),
+        apiFetch(`/api/market/data?section=quote&symbol=${encodeURIComponent(symbol)}${debugParam}`).then(async r => (r.ok ? r.json() : Promise.reject(await r.text()))),
+        apiFetch(`/api/market/data?section=chart&symbol=${encodeURIComponent(symbol)}&range=1mo&interval=1d${debugParam}`).then(async r => (r.ok ? r.json() : Promise.reject(await r.text()))),
       ]);
 
       const q = quoteRes?.quote;
@@ -142,7 +142,7 @@ export function StockSearch() {
         const candidates: Array<[string, string]> = [['3mo','1d'], ['6mo','1d'], ['1y','1wk']];
         for (const [r, i] of candidates) {
           const { apiFetch } = await import('@/lib/utils');
-          const alt = await apiFetch(`/api/market/data?section=chart&symbol=${encodeURIComponent(symbol)}&range=${r}&interval=${i}${debugParam}`, { cache: 'no-store' });
+          const alt = await apiFetch(`/api/market/data?section=chart&symbol=${encodeURIComponent(symbol)}&range=${r}&interval=${i}${debugParam}`);
           if (!alt.ok) continue;
           const altJson = await alt.json();
           let candidate: any[] = [];

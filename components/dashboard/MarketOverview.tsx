@@ -46,7 +46,7 @@ export function MarketOverview() {
         setError(null);
         const debug = process.env.NEXT_PUBLIC_API_DEBUG ? '&debug=1' : '';
         const { apiFetch } = await import('@/lib/utils');
-        const res = await apiFetch(`/api/market/data?section=indices${debug}`, { cache: 'no-store' });
+        const res = await apiFetch(`/api/market/data?section=indices${debug}`);
         
         if (!res.ok) {
           throw new Error(`API request failed: ${res.status}`);
