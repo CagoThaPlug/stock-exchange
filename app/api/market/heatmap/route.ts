@@ -153,6 +153,12 @@ export async function GET(req: NextRequest) {
     // If we used the ETF fallback (or stocks arrays are empty), populate per-sector breakdown stocks
     if (usedEtfFallback || sectors.every((s) => !Array.isArray(s.stocks) || s.stocks.length === 0)) {
       const computeChangePct = async (symbol: string): Promise<number> => {
+        // Prefer real-time quote change percent when available; fallback to daily chart delta
+        try {
+          const q: any = await yahooFinance.quote(symbol as any).catch(() => null);
+          const pct = Number(q?.regularMarketChangePercent ?? NaN);
+          if (Number.isFinite(pct)) return pct;
+        } catch {}
         try {
           const now = Date.now();
           const dayMs = 24 * 60 * 60 * 1000;

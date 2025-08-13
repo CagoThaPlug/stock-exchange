@@ -161,7 +161,7 @@ export function MarketHeatmap() {
                 >
                   <p className="font-medium text-sm">{stock.symbol}</p>
                   <p className={`text-sm ${stock.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(1)}%
+                    {stock.change >= 0 ? '+' : ''}{Number.isFinite(stock.change) ? stock.change.toFixed(2) : '0.00'}%
                   </p>
                 </button>
               ))}
