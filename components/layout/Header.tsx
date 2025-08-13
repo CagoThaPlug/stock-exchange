@@ -146,6 +146,7 @@ interface SettingsPanelProps {
   settings: any;
   updatePreferences: (updates: any) => void;
   updateSettings: (updates: any) => void;
+  resetPreferences: () => void;
   onClose: () => void;
 }
 
@@ -154,6 +155,7 @@ const SettingsPanel = memo(function SettingsPanel({
   settings,
   updatePreferences,
   updateSettings,
+  resetPreferences,
   onClose
 }: SettingsPanelProps) {
   const languageFlagSrcByCode: Record<string, string> = {
@@ -348,8 +350,18 @@ const SettingsPanel = memo(function SettingsPanel({
         </div>
       </div>
 
-      <div className="pt-3 mt-3 border-t border-border text-xs text-muted-foreground">
-        {translate(preferences.language, 'header.prefs.savedLocally', 'All settings are saved locally in your browser')}
+      <div className="pt-3 mt-3 border-t border-border text-xs text-muted-foreground flex items-center justify-between">
+        <span>
+          {translate(preferences.language, 'header.prefs.savedLocally', 'All settings are saved locally in your browser')}
+        </span>
+        <button
+          onClick={() => { resetPreferences(); onClose(); }}
+          className="text-xs px-2 py-1 rounded bg-muted hover:bg-muted/80 text-foreground"
+          aria-label="Clear settings"
+          title="Clear settings"
+        >
+          {translate(preferences.language, 'header.prefs.clear', 'Clear')}
+        </button>
       </div>
     </div>
   );
@@ -484,6 +496,7 @@ export function Header() {
                   settings={settings}
                   updatePreferences={updatePreferences}
                   updateSettings={updateSettings}
+                  resetPreferences={(window as any).resetPreferences || (() => { try { localStorage.removeItem('zalc-preferences'); location.reload(); } catch {} })}
                   onClose={closeSettings}
                 />
               )}

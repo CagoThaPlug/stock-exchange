@@ -15,7 +15,8 @@ export function StockIcon({ symbol, name, size = 24, className }: StockIconProps
   const [sourceIndex, setSourceIndex] = useState(0);
   const upper = (symbol || "?").toUpperCase();
 
-  const apiBase = process.env.NEXT_PUBLIC_API_BASE || '';
+  // Always use local API route to avoid cross-domain calls
+  const apiBase = '';
   const candidates: string[] = Array.from(
     new Set([
       `${apiBase}/api/logo?symbol=${encodeURIComponent(upper)}`,
