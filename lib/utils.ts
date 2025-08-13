@@ -7,7 +7,8 @@ export function cn(...inputs: ClassValue[]) {
 
 // Centralized API fetch that targets backend origin when configured
 export function apiFetch(input: string, init?: RequestInit): Promise<Response> {
-  const base = typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_API_BASE || 'https://api.zalc.dev') : '';
+  // Default to same-origin so Cloudflare Pages Functions handle /api/* without extra config.
+  const base = typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_API_BASE || '') : '';
   let url = input;
   if (!input.startsWith('http')) {
     if (base) {

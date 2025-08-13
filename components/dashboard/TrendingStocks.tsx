@@ -34,9 +34,9 @@ export function TrendingStocks() {
         setLoading(true);
         const { apiFetch } = await import('@/lib/utils');
         const [g, l, a] = await Promise.all([
-          apiFetch('/market/data?section=movers&type=gainers', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ movers: [] })),
-          apiFetch('/market/data?section=movers&type=losers', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ movers: [] })),
-          apiFetch('/market/data?section=movers&type=actives', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ movers: [] })),
+          apiFetch('/api/market/data?section=movers&type=gainers', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ movers: [] })),
+          apiFetch('/api/market/data?section=movers&type=losers', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ movers: [] })),
+          apiFetch('/api/market/data?section=movers&type=actives', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ movers: [] })),
         ]);
         if (abort) return;
         

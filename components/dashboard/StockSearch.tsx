@@ -17,7 +17,7 @@ interface StockQuote {
   change: number;
   changePercent: number;
   volume: number;
-  marketCap: number;
+  marketCap: number | string;
   sector: string;
 }
 
@@ -362,7 +362,9 @@ export function StockSearch() {
                 <span className="text-sm font-medium">{translate(preferences.language, 'search.marketCap', 'Market Cap')}</span>
               </div>
               <p className="text-xl font-bold">
-                {formatCompactCurrency(convertFromUSD(selectedStock.marketCap), { locale: preferences.locale, currency: preferences.currency })}
+                {Number(selectedStock.marketCap) > 0
+                  ? formatCompactCurrency(convertFromUSD(Number(selectedStock.marketCap)), { locale: preferences.locale, currency: preferences.currency })
+                  : '—'}
               </p>
             </div>
           </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, memo, useCallback, useRef } from 'react';
+import { apiFetch } from '@/lib/utils';
 import { ChevronDown, Pause, Play, RefreshCw, TrendingUp, TrendingDown, Activity } from 'lucide-react';
 
 interface MarketItem {
@@ -68,17 +69,13 @@ function TickerTapeInner({
     setError(null);
 
     try {
-      const base = process.env.NEXT_PUBLIC_API_BASE || 'https://api.zalc.dev';
-      const url = new URL('/market/tape', base);
-      url.searchParams.set('category', selectedCategory);
-      url.searchParams.set('limit', maxItems.toString());
-      
-      const res = await fetch(url.toString(), { 
+      const params = new URLSearchParams();
+      params.set('category', selectedCategory);
+      params.set('limit', maxItems.toString());
+      const res = await apiFetch(`/api/market/tape?${params.toString()}`, {
         cache: 'no-store',
         signal: controllerRef.current.signal,
-        headers: {
-          'Accept': 'application/json',
-        }
+        headers: { 'Accept': 'application/json' },
       });
       
       if (!res.ok) {

@@ -55,6 +55,34 @@ export function NewsFeed() {
     return text.replace(new RegExp(`\\b(?:www\\.)?${escaped}\\b`, 'gi'), '').replace(/\s+/g, ' ').trim();
   };
 
+  const normalizePublishedAt = (raw: any): string => {
+    if (!raw) return '';
+    try {
+      if (typeof raw === 'number') {
+        // seconds vs ms
+        const ms = raw < 10_000_000_000 ? raw * 1000 : raw;
+        const d = new Date(ms);
+        return isNaN(d.getTime()) ? '' : d.toISOString();
+      }
+      if (typeof raw === 'string') {
+        // If string is numeric epoch
+        const num = Number(raw);
+        if (Number.isFinite(num) && raw.trim() !== '') {
+          const ms = num < 10_000_000_000 ? num * 1000 : num;
+          const d = new Date(ms);
+          if (!isNaN(d.getTime())) return d.toISOString();
+        }
+        // Treat timestamps missing a timezone as UTC (e.g., 2025-08-12T15:31:00)
+        const looksLikeNoTz = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(raw.trim());
+        const d = new Date(looksLikeNoTz ? `${raw.trim()}Z` : raw);
+        return isNaN(d.getTime()) ? '' : d.toISOString();
+      }
+      return '';
+    } catch {
+      return '';
+    }
+  };
+
   useEffect(() => {
     const controller = new AbortController();
     const load = async () => {
@@ -77,12 +105,13 @@ export function NewsFeed() {
             summary = '';
           }
           const source = extractPlainText(a.source?.name || a.source || getHostname(url) || 'News');
+          const publishedAt = normalizePublishedAt(a.publishedAt || a.pubDate || a.providerPublishTime || '');
           return {
             id: a.id || String(idx),
             title,
             summary,
             source,
-            publishedAt: a.publishedAt || new Date().toISOString(),
+            publishedAt,
             url,
             sentiment: a.sentiment || 'neutral',
             relevantStocks: a.relevantStocks || a.relevantSymbols || [],
@@ -150,14 +179,30 @@ export function NewsFeed() {
   };
 
   const formatTimeAgo = (dateString: string) => {
+    if (!dateString) return '';
     const date = new Date(dateString);
+    if (isNaN(date.getTime())) return '';
     const now = new Date();
-    const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
-    
-    if (diffInHours < 1) return translate(preferences.language, 'time.justNow', 'Just now');
-    if (diffInHours < 24) return translate(preferences.language, 'time.hoursAgo', `${diffInHours}h ago`).replace('{h}', String(diffInHours));
-    const d = Math.floor(diffInHours / 24);
-    return translate(preferences.language, 'time.daysAgo', `${d}d ago`).replace('{d}', String(d));
+    const diffMs = now.getTime() - date.getTime();
+    if (diffMs < 60_000) return translate(preferences.language, 'time.justNow', 'Just now');
+    const diffMin = Math.floor(diffMs / 60_000);
+    if (diffMin < 60) return translate(preferences.language, 'time.minutesAgo', `${diffMin}m ago`).replace('{m}', String(diffMin));
+    const diffHours = Math.floor(diffMin / 60);
+    if (diffHours < 24) return translate(preferences.language, 'time.hoursAgo', `${diffHours}h ago`).replace('{h}', String(diffHours));
+    const diffDays = Math.floor(diffHours / 24);
+    const rel = translate(preferences.language, 'time.daysAgo', `${diffDays}d ago`).replace('{d}', String(diffDays));
+    // If date is older than ~7 days, prefer absolute date for clarity
+    if (diffDays > 7) {
+      try {
+        const abs = new Intl.DateTimeFormat(preferences.locale || 'en-US', {
+          year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit'
+        } as any).format(date);
+        return abs;
+      } catch {
+        return rel;
+      }
+    }
+    return rel;
   };
 
   return (

@@ -146,7 +146,16 @@ async function quoteSummary(symbol: string, modules: string[]): Promise<any | nu
 }
 
 async function fetchLatestSharesOutstanding(symbol: string): Promise<number | null> {
-  const params = `type=sharesOutstanding&merge=false&period1=0`;
+  // Try multiple series that may contain share counts
+  const types = [
+    'sharesOutstanding',
+    'trailingSharesOutstanding',
+    'annualBasicAverageShares',
+    'annualDilutedAverageShares',
+    'quarterlyBasicAverageShares',
+    'quarterlyDilutedAverageShares',
+  ];
+  const params = `type=${encodeURIComponent(types.join(','))}&merge=false&period1=0`;
   const urls = [
     `https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(symbol)}?${params}`,
     `https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(symbol)}?${params}`,
@@ -154,13 +163,15 @@ async function fetchLatestSharesOutstanding(symbol: string): Promise<number | nu
   for (const u of urls) {
     try {
       const data = await fetchJson(u);
-      const arr = data?.timeseries?.result?.[0]?.sharesOutstanding;
-      if (Array.isArray(arr) && arr.length) {
-        // Find last entry with a numeric raw value
-        for (let i = arr.length - 1; i >= 0; i--) {
-          const raw = arr[i]?.reportedValue?.raw ?? arr[i]?.reportedValue ?? arr[i]?.raw;
-          if (typeof raw === 'number' && Number.isFinite(raw)) {
-            return raw;
+      const result = data?.timeseries?.result?.[0] || {};
+      for (const key of types) {
+        const series = result?.[key];
+        if (Array.isArray(series) && series.length) {
+          for (let i = series.length - 1; i >= 0; i--) {
+            const raw = series[i]?.reportedValue?.raw ?? series[i]?.reportedValue ?? series[i]?.raw;
+            if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) {
+              return raw;
+            }
           }
         }
       }

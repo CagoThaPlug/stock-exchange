@@ -29,7 +29,8 @@ export async function GET(req: NextRequest) {
     if (section === 'movers') {
       const type = (req.nextUrl.searchParams.get('type') || 'gainers') as 'gainers' | 'losers' | 'actives';
       const results = await fetchMovers(type);
-      return NextResponse.json(debug ? withDebug(req, { results }) : { results }, { headers: debugHeaders(req) });
+      const body = { movers: results } as const;
+      return NextResponse.json(debug ? withDebug(req, body) : body, { headers: debugHeaders(req) });
     }
 
     if (section === 'search') {
