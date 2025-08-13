@@ -103,7 +103,6 @@ async function fetchYahooArticles(q: string, limit: number) {
         'Accept-Language': 'en-US,en;q=0.9',
         'Referer': 'https://finance.yahoo.com/',
       },
-      cache: 'no-store',
     });
     if (!response.ok) return [] as any[];
     const data = await response.json();
@@ -130,7 +129,7 @@ async function fetchYahooArticles(q: string, limit: number) {
 async function fetchGoogleNewsArticles(q: string, limit: number) {
   try {
     const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
-    const res = await fetch(rssUrl, { cache: 'no-store' });
+    const res = await fetch(rssUrl);
     if (!res.ok) return [] as any[];
     const xml = await res.text();
     const items = parseRssItems(xml).slice(0, limit);

@@ -30,7 +30,18 @@ export async function onRequestGet(context: { request: Request }) {
 
     if (section === 'quote') {
       const symbol = url.searchParams.get('symbol') || '';
-      const quote = await fetchQuote(symbol);
+      let quote = await fetchQuote(symbol);
+      if (!quote) {
+        quote = {
+          symbol,
+          name: symbol,
+          price: 0,
+          change: 0,
+          changePercent: 0,
+          volume: 0,
+          marketCap: 0,
+        } as any;
+      }
       return jsonResponse(debug ? withDebug(request, { quote }) : { quote }, {
         headers: {
           ...debugHeaders(request),

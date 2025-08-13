@@ -4,7 +4,7 @@ export async function onRequestGet(context: { request: Request }) {
   const base = url.searchParams.get('base') || 'USD';
   try {
     const upstream = `https://api.exchangerate.host/latest?base=${encodeURIComponent(base)}`;
-    const res = await fetch(upstream, { cache: 'no-store' });
+    const res = await fetch(upstream);
     if (!res.ok) {
       const t = await res.text().catch(() => '');
       return json({ error: `FX upstream ${res.status}: ${t}` }, 502);
