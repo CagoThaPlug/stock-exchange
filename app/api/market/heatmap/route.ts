@@ -36,6 +36,22 @@ export async function GET(req: NextRequest) {
     const symbolToQuote = new Map<string, Quote>();
     for (const q of quotes) if (q?.symbol) symbolToQuote.set(q.symbol, q);
 
+    // Derive a robust change percent from quote fields with sensible fallbacks
+    const deriveChangePctFromQuote = (q: Quote): number => {
+      const pct = Number((q as any)?.regularMarketChangePercent);
+      if (Number.isFinite(pct) && pct !== 0) return pct;
+      const change = Number((q as any)?.regularMarketChange);
+      const prevClose = Number((q as any)?.regularMarketPreviousClose);
+      const price = Number((q as any)?.regularMarketPrice);
+      if (Number.isFinite(change) && Number.isFinite(prevClose) && prevClose !== 0) {
+        return (change / prevClose) * 100;
+      }
+      if (Number.isFinite(price) && Number.isFinite(prevClose) && prevClose !== 0) {
+        return ((price - prevClose) / prevClose) * 100;
+      }
+      return Number.isFinite(pct) ? pct : 0;
+    };
+
     // Helper to pick N random unique items from an array
     const pickRandom = <T,>(arr: T[], n: number): T[] => {
       const copy = [...arr];
@@ -52,19 +68,20 @@ export async function GET(req: NextRequest) {
         .map((s) => symbolToQuote.get(s))
         .filter(Boolean) as Quote[];
 
-      let totalCap = stocks.reduce((acc, q) => acc + Number(q.marketCap || 0), 0);
+      let totalCap = stocks.reduce((acc, q) => acc + Number((q as any).marketCap || 0), 0);
       // Weighted average by marketCap if available, otherwise simple average
       let avgPct = 0;
       if (stocks.length) {
         if (totalCap <= 0) {
           // If market caps are missing due to quote block, approximate using equal weights
-          avgPct = stocks.reduce((acc, q) => acc + Number(q.regularMarketChangePercent || 0), 0) / stocks.length;
+          avgPct = stocks.reduce((acc, q) => acc + deriveChangePctFromQuote(q), 0) / stocks.length;
           totalCap = stocks.length * 1_000_000_000; // approximate to size tiles
         } else {
-          avgPct = stocks.reduce(
-            (acc, q) => acc + (Number(q.marketCap || 0) / totalCap) * Number(q.regularMarketChangePercent || 0),
-            0
-          );
+          avgPct = stocks.reduce((acc, q) => {
+            const cap = Number((q as any).marketCap || 0);
+            const pct = deriveChangePctFromQuote(q);
+            return acc + (cap / totalCap) * pct;
+          }, 0);
         }
       }
 
@@ -73,29 +90,21 @@ export async function GET(req: NextRequest) {
       const subset = pickRandom(stocks, 8);
       const topQuotes = subset
         .slice() // shallow copy
-        .sort((a, b) => Math.abs(Number(b.regularMarketChangePercent || 0)) - Math.abs(Number(a.regularMarketChangePercent || 0)))
+        .sort((a, b) => Math.abs(deriveChangePctFromQuote(b)) - Math.abs(deriveChangePctFromQuote(a)))
         .slice(0, 4);
-      const top = topQuotes.map((q) => ({ symbol: q.symbol, change: Number(q.regularMarketChangePercent || 0) }));
+      const top = topQuotes.map((q) => ({ symbol: (q as any).symbol, change: deriveChangePctFromQuote(q) }));
 
-      // Align sector tile percent with what is displayed: average of the 4 shown stocks
-      let displayAvg = 0;
+      // Align sector tile percent with what is displayed: sum of the 4 shown stocks
+      let displaySum = 0;
       if (topQuotes.length) {
-        // If market caps available for these four, weight by cap; otherwise equal-weight
-        const capSum = topQuotes.reduce((acc, q) => acc + Number(q.marketCap || 0), 0);
-        if (capSum > 0) {
-          displayAvg = topQuotes.reduce(
-            (acc, q) => acc + (Number(q.marketCap || 0) / capSum) * Number(q.regularMarketChangePercent || 0),
-            0
-          );
-        } else {
-          displayAvg = topQuotes.reduce((acc, q) => acc + Number(q.regularMarketChangePercent || 0), 0) / topQuotes.length;
-        }
+        // Sum raw percent changes (not an average)
+        displaySum = topQuotes.reduce((acc, q) => acc + deriveChangePctFromQuote(q), 0);
       }
 
       return {
         name,
-        // Use displayAvg to match the visible movers list; keep totalCap for sizing
-        change: Number(displayAvg),
+        // Use sum of visible movers to match user's expectation of "total"; keep totalCap for sizing
+        change: Number(displaySum),
         marketCap: totalCap || stocks.length * 1_000_000_000,
         stocks: top,
       };
@@ -153,11 +162,22 @@ export async function GET(req: NextRequest) {
     // If we used the ETF fallback (or stocks arrays are empty), populate per-sector breakdown stocks
     if (usedEtfFallback || sectors.every((s) => !Array.isArray(s.stocks) || s.stocks.length === 0)) {
       const computeChangePct = async (symbol: string): Promise<number> => {
-        // Prefer real-time quote change percent when available; fallback to daily chart delta
+        // Prefer real-time quote change percent when available; fallback to derived fields; then chart delta
         try {
           const q: any = await yahooFinance.quote(symbol as any).catch(() => null);
-          const pct = Number(q?.regularMarketChangePercent ?? NaN);
-          if (Number.isFinite(pct)) return pct;
+          if (q) {
+            const pct = Number(q?.regularMarketChangePercent ?? NaN);
+            if (Number.isFinite(pct) && pct !== 0) return pct;
+            const change = Number(q?.regularMarketChange ?? NaN);
+            const prevClose = Number(q?.regularMarketPreviousClose ?? NaN);
+            const price = Number(q?.regularMarketPrice ?? NaN);
+            if (Number.isFinite(change) && Number.isFinite(prevClose) && prevClose !== 0) {
+              return (change / prevClose) * 100;
+            }
+            if (Number.isFinite(price) && Number.isFinite(prevClose) && prevClose !== 0) {
+              return ((price - prevClose) / prevClose) * 100;
+            }
+          }
         } catch {}
         try {
           const now = Date.now();
@@ -191,8 +211,8 @@ export async function GET(req: NextRequest) {
           })
           .sort((a, b) => Math.abs(b.change) - Math.abs(a.change))
           .slice(0, 4);
-        const avg = stocks.length ? stocks.reduce((acc, s) => acc + s.change, 0) / stocks.length : sector.change;
-        updated.push({ ...sector, stocks, change: avg });
+        const sum = stocks.length ? stocks.reduce((acc, s) => acc + s.change, 0) : sector.change;
+        updated.push({ ...sector, stocks, change: sum });
       }
       sectors = updated;
     }
