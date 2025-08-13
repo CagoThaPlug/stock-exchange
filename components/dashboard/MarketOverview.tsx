@@ -23,6 +23,7 @@ export function MarketOverview() {
   const [error, setError] = useState<string | null>(null);
   const { preferences } = usePreferences();
   const { convertFromUSD } = useCurrency();
+  const [timeUntilOpen, setTimeUntilOpen] = useState<string>('');
 
   // Helper function to safely format numbers
   const safeToFixed = (value: number | null, digits: number = 2): string => {
@@ -38,6 +39,67 @@ export function MarketOverview() {
   // Helper function to determine if value is positive
   const isPositive = (value: number | null): boolean => {
     return value !== null && !isNaN(value) && value >= 0;
+  };
+
+  // Helper to get current New York (America/New_York) time parts
+  type NYTimeParts = { weekdayIndex: number; hour: number; minute: number; second: number };
+  const getNYTimeParts = (): NYTimeParts => {
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(now);
+    let weekdayStr = '';
+    let hourStr = '0';
+    let minuteStr = '0';
+    let secondStr = '0';
+    for (const p of parts) {
+      if (p.type === 'weekday') weekdayStr = p.value;
+      if (p.type === 'hour') hourStr = p.value;
+      if (p.type === 'minute') minuteStr = p.value;
+      if (p.type === 'second') secondStr = p.value;
+    }
+    const weekdayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    return {
+      weekdayIndex: weekdayMap[weekdayStr] ?? 0,
+      hour: parseInt(hourStr, 10),
+      minute: parseInt(minuteStr, 10),
+      second: parseInt(secondStr, 10),
+    };
+  };
+
+  // Helper to compute seconds until next market open at 9:00 AM New York time
+  const getSecondsUntilNextOpenNY = (): number => {
+    const { weekdayIndex, hour, minute, second } = getNYTimeParts();
+    const nowSeconds = hour * 3600 + minute * 60 + second;
+    const openSeconds = 9 * 3600; // 9:00 AM
+    const closeSeconds = 16 * 3600; // 4:00 PM
+
+    const isWeekend = weekdayIndex === 0 || weekdayIndex === 6; // Sun or Sat
+    // If it's a weekday and before open
+    if (!isWeekend && nowSeconds < openSeconds) {
+      return openSeconds - nowSeconds;
+    }
+    // If during or after close, or weekend, find next weekday's 9:00 AM
+    let daysUntil = 0;
+    if (isWeekend) {
+      // To Monday
+      daysUntil = (1 - weekdayIndex + 7) % 7 || 7; // Sun->1, Sat->2
+    } else if (nowSeconds >= closeSeconds) {
+      // After close
+      daysUntil = weekdayIndex === 5 ? 3 : 1; // Fri->Mon (3 days), else next day
+    } else {
+      // During market hours (should not be called for countdown usage)
+      return 0;
+    }
+    const secondsLeftToday = 24 * 3600 - nowSeconds;
+    const wholeDaysInBetween = Math.max(0, daysUntil - 1);
+    return secondsLeftToday + wholeDaysInBetween * 24 * 3600 + openSeconds;
   };
 
   useEffect(() => {
@@ -82,15 +144,16 @@ export function MarketOverview() {
         setError(err instanceof Error ? err.message : 'Failed to load market data');
         setIndices([]);
       } finally {
-        const now = new Date();
-        const hour = now.getHours();
-        const day = now.getDay();
-        const isWeekend = day === 0 || day === 6;
-        const isBusinessHours = hour >= 9 && hour < 16;
-        setIsMarketOpen(!isWeekend && isBusinessHours);
-        setMarketStatus(!isWeekend && isBusinessHours 
-          ? translate(preferences.language, 'market.open', 'Market Open') 
-          : translate(preferences.language, 'market.closed', 'Market Closed'));
+        const ny = getNYTimeParts();
+        const isWeekendNY = ny.weekdayIndex === 0 || ny.weekdayIndex === 6;
+        const isBusinessHoursNY = ny.hour >= 9 && ny.hour < 16; // 9am to 4pm New York time
+        const marketOpen = !isWeekendNY && isBusinessHoursNY;
+        setIsMarketOpen(marketOpen);
+        setMarketStatus(
+          marketOpen
+            ? translate(preferences.language, 'market.open', 'Market Open')
+            : translate(preferences.language, 'market.closed', 'Market Closed')
+        );
         setLoading(false);
       }
     };
@@ -99,6 +162,30 @@ export function MarketOverview() {
     const interval = setInterval(load, 30000);
     return () => clearInterval(interval);
   }, [preferences.language]);
+
+  // Countdown ticker for next open when market is closed
+  useEffect(() => {
+    if (isMarketOpen) {
+      setTimeUntilOpen('');
+      return;
+    }
+    const update = () => {
+      const seconds = getSecondsUntilNextOpenNY();
+      if (seconds <= 0 || !isFinite(seconds)) {
+        setTimeUntilOpen('');
+        return;
+      }
+      const hrs = Math.floor(seconds / 3600);
+      const mins = Math.floor((seconds % 3600) / 60);
+      const secs = Math.floor(seconds % 60);
+      const minsStr = mins.toString().padStart(2, '0');
+      const secsStr = secs.toString().padStart(2, '0');
+      setTimeUntilOpen(`${hrs}h ${minsStr}m ${secsStr}s`);
+    };
+    update();
+    const id = window.setInterval(update, 1000);
+    return () => window.clearInterval(id);
+  }, [isMarketOpen]);
 
   if (loading) {
     return (
@@ -153,6 +240,11 @@ export function MarketOverview() {
               preferences.language,
               isMarketOpen ? 'market.open' : 'market.closed',
               isMarketOpen ? 'Market Open' : 'Market Closed'
+            )}
+            {!isMarketOpen && timeUntilOpen && (
+              <span className="ml-2 text-xs">
+                • {translate(preferences.language, 'market.opensIn', 'Opens in')} {timeUntilOpen}
+              </span>
             )}
           </span>
         </div>

@@ -36,6 +36,16 @@ export async function GET(req: NextRequest) {
     const symbolToQuote = new Map<string, Quote>();
     for (const q of quotes) if (q?.symbol) symbolToQuote.set(q.symbol, q);
 
+    // Helper to pick N random unique items from an array
+    const pickRandom = <T,>(arr: T[], n: number): T[] => {
+      const copy = [...arr];
+      for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy.slice(0, Math.min(n, copy.length));
+    };
+
     // Build sector aggregates (primary path)
     let sectors = Object.entries(SECTOR_SYMBOLS).map(([name, symbols]) => {
       const stocks = symbols
@@ -58,15 +68,34 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      const top = stocks
-        .slice(0, 8)
-        .map((q) => ({ symbol: q.symbol, change: Number(q.regularMarketChangePercent || 0) }))
-        .sort((a, b) => Math.abs(b.change) - Math.abs(a.change))
+      // Pick a random subset first to avoid showing the same names repeatedly,
+      // then take the strongest movers to ensure visible differentiation
+      const subset = pickRandom(stocks, 8);
+      const topQuotes = subset
+        .slice() // shallow copy
+        .sort((a, b) => Math.abs(Number(b.regularMarketChangePercent || 0)) - Math.abs(Number(a.regularMarketChangePercent || 0)))
         .slice(0, 4);
+      const top = topQuotes.map((q) => ({ symbol: q.symbol, change: Number(q.regularMarketChangePercent || 0) }));
+
+      // Align sector tile percent with what is displayed: average of the 4 shown stocks
+      let displayAvg = 0;
+      if (topQuotes.length) {
+        // If market caps available for these four, weight by cap; otherwise equal-weight
+        const capSum = topQuotes.reduce((acc, q) => acc + Number(q.marketCap || 0), 0);
+        if (capSum > 0) {
+          displayAvg = topQuotes.reduce(
+            (acc, q) => acc + (Number(q.marketCap || 0) / capSum) * Number(q.regularMarketChangePercent || 0),
+            0
+          );
+        } else {
+          displayAvg = topQuotes.reduce((acc, q) => acc + Number(q.regularMarketChangePercent || 0), 0) / topQuotes.length;
+        }
+      }
 
       return {
         name,
-        change: Number(avgPct),
+        // Use displayAvg to match the visible movers list; keep totalCap for sizing
+        change: Number(displayAvg),
         marketCap: totalCap || stocks.length * 1_000_000_000,
         stocks: top,
       };
@@ -146,7 +175,7 @@ export async function GET(req: NextRequest) {
       const updated = [] as typeof sectors;
       for (const sector of sectors) {
         const symbols = SECTOR_SYMBOLS[sector.name] || [];
-        const subset = symbols.slice(0, 6);
+        const subset = pickRandom(symbols, 8);
         const settled = await Promise.allSettled(subset.map((s) => computeChangePct(s)));
         const stocks = subset
           .map((symbol, i) => {
@@ -156,7 +185,8 @@ export async function GET(req: NextRequest) {
           })
           .sort((a, b) => Math.abs(b.change) - Math.abs(a.change))
           .slice(0, 4);
-        updated.push({ ...sector, stocks });
+        const avg = stocks.length ? stocks.reduce((acc, s) => acc + s.change, 0) / stocks.length : sector.change;
+        updated.push({ ...sector, stocks, change: avg });
       }
       sectors = updated;
     }

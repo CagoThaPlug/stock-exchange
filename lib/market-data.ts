@@ -32,12 +32,23 @@ export async function fetchIndices(): Promise<MarketIndex[]> {
     'CNC', 'XRAY', 'ES', 'NTRS', 'ESS', 'HCA', 'INFO', 'KMI', 'VRSN', 'ALLE',
     'PKI', 'VFC', 'MAA', 'DLTR', 'FTNT', 'ROK', 'FISV', 'ODFL', 'CLX', 'EVRG'
   ];
+  
+  // Pick a random selection of up to 3 symbols each call for performance
+  const pickRandom = <T,>(arr: T[], n: number): T[] => {
+    const copy = [...arr];
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy.slice(0, Math.min(n, copy.length));
+  };
+  const selected = pickRandom(symbols, 3);
 
-  // Chunk to avoid excessively long query strings and upstream 502s in edge
+  // Chunk in case we later increase selection size; harmless for 3
   const chunkSize = 50;
   const chunks: string[][] = [];
-  for (let i = 0; i < symbols.length; i += chunkSize) {
-    chunks.push(symbols.slice(i, i + chunkSize));
+  for (let i = 0; i < selected.length; i += chunkSize) {
+    chunks.push(selected.slice(i, i + chunkSize));
   }
 
   const results: any[] = [];
@@ -57,7 +68,7 @@ export async function fetchIndices(): Promise<MarketIndex[]> {
       { symbol: '^DJI', name: 'Dow Jones' },
       { symbol: '^IXIC', name: 'NASDAQ' },
       { symbol: '^RUT', name: 'Russell 2000' },
-      /* { symbol: '^FTSE', name: 'FTSE 100' },
+      { symbol: '^FTSE', name: 'FTSE 100' },
       { symbol: '^GDAXI', name: 'DAX' },
       { symbol: '^N225', name: 'Nikkei 225' },
       { symbol: '^HSI', name: 'Hang Seng' },
@@ -104,10 +115,11 @@ export async function fetchIndices(): Promise<MarketIndex[]> {
       { symbol: 'ORCL', name: 'Oracle' },
       { symbol: 'NEE', name: 'NextEra Energy' },
       { symbol: 'BMY', name: 'Bristol Myers Squibb' },
-      { symbol: 'UPS', name: 'United Parcel Service' }, */
+      { symbol: 'UPS', name: 'United Parcel Service' },
     ];
     const fallbacks: MarketIndex[] = [];
-    for (const { symbol, name } of core) {
+    const selectedCore = pickRandom(core, 3);
+    for (const { symbol, name } of selectedCore) {
       try {
         const now = Date.now();
         const dayMs = 24 * 60 * 60 * 1000;

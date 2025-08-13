@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Search, TrendingUp, TrendingDown, Volume, DollarSign } from 'lucide-react';
 import { StockIcon } from '@/components/ui/stock-icon';
 import { useStockSelection } from '@/components/providers/StockSelectionProvider';
@@ -53,6 +53,7 @@ export function StockSearch() {
   const [query, setQuery] = useState('');
   const [selectedStock, setSelectedStock] = useState<StockQuote | null>(null);
   const [chartData, setChartData] = useState<ChartData[]>([]);
+  const [selectedRange, setSelectedRange] = useState<string>('1mo');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -70,6 +71,33 @@ export function StockSearch() {
   const TT = Tooltip as unknown as React.ComponentType<any>;
   const AR = Area as unknown as React.ComponentType<any>;
   const CG = CartesianGrid as unknown as React.ComponentType<any>;
+
+  const RANGE_OPTIONS: Array<{ key: string; label: string; interval: string }> = [
+    { key: '1d', label: '1D', interval: '30m' },
+    { key: '5d', label: '5D', interval: '1h' },
+    { key: '1mo', label: '1M', interval: '1d' },
+    { key: '3mo', label: '3M', interval: '1d' },
+    { key: '6mo', label: '6M', interval: '1d' },
+    { key: '1y', label: '1Y', interval: '1wk' },
+    { key: '5y', label: '5Y', interval: '1mo' },
+  ];
+
+  const getIntervalForRange = (key: string) => RANGE_OPTIONS.find(r => r.key === key)?.interval || '1d';
+
+  // Dynamic Y-axis domain: keep 0-baseline for 1Y/5Y, zoom to data range for shorter windows
+  const yDomain = useMemo(() => {
+    if (!chartData.length) return ['auto', 'auto'] as any;
+    const prices = chartData.map(p => p.price).filter(n => Number.isFinite(n));
+    if (!prices.length) return ['auto', 'auto'] as any;
+    const min = Math.min(...prices);
+    const max = Math.max(...prices);
+    const spread = Math.max(max - min, 0);
+    const padding = Math.max(spread * 0.05, max * 0.005, 0.01);
+    if (selectedRange === '1y' || selectedRange === '5y') {
+      return [0, Math.ceil(max + padding)];
+    }
+    return [Math.floor(min - padding), Math.ceil(max + padding)];
+  }, [chartData, selectedRange]);
 
   const searchStocks = useCallback(
     debounce(async (searchQuery: string) => {
@@ -124,9 +152,10 @@ export function StockSearch() {
     try {
       const debugParam = process.env.NEXT_PUBLIC_API_DEBUG ? '&debug=1' : '';
       const { apiFetch } = await import('@/lib/utils');
+      const interval = getIntervalForRange(selectedRange);
       const [quoteRes, chartRes] = await Promise.all([
         apiFetch(`/api/market/data?section=quote&symbol=${encodeURIComponent(symbol)}${debugParam}`).then(async r => (r.ok ? r.json() : Promise.reject(await r.text()))),
-        apiFetch(`/api/market/data?section=chart&symbol=${encodeURIComponent(symbol)}&range=1mo&interval=1d${debugParam}`).then(async r => (r.ok ? r.json() : Promise.reject(await r.text()))),
+        apiFetch(`/api/market/data?section=chart&symbol=${encodeURIComponent(symbol)}&range=${encodeURIComponent(selectedRange)}&interval=${encodeURIComponent(interval)}${debugParam}`).then(async r => (r.ok ? r.json() : Promise.reject(await r.text()))),
       ]);
 
       const q = quoteRes?.quote;
@@ -137,9 +166,14 @@ export function StockSearch() {
         ch = chartRes.chart.points;
       }
 
-      // If no chart points returned, try a wider range as fallback (still real data)
+      // If no chart points returned, try a set of fallbacks
       if (!ch.length) {
-        const candidates: Array<[string, string]> = [['3mo','1d'], ['6mo','1d'], ['1y','1wk']];
+        const candidates: Array<[string, string]> = [
+          [selectedRange, getIntervalForRange(selectedRange)],
+          ['3mo','1d'],
+          ['6mo','1d'],
+          ['1y','1wk']
+        ];
         for (const [r, i] of candidates) {
           const { apiFetch } = await import('@/lib/utils');
           const alt = await apiFetch(`/api/market/data?section=chart&symbol=${encodeURIComponent(symbol)}&range=${r}&interval=${i}${debugParam}`);
@@ -189,6 +223,40 @@ export function StockSearch() {
     setHoveredPoint(null);
     setLoading(false);
   };
+
+  // Re-fetch chart when range changes for the current stock
+  useEffect(() => {
+    const run = async () => {
+      if (!selectedStock?.symbol) return;
+      try {
+        const debugParam = process.env.NEXT_PUBLIC_API_DEBUG ? '&debug=1' : '';
+        const interval = getIntervalForRange(selectedRange);
+        const { apiFetch } = await import('@/lib/utils');
+        const res = await apiFetch(`/api/market/data?section=chart&symbol=${encodeURIComponent(selectedStock.symbol)}&range=${encodeURIComponent(selectedRange)}&interval=${encodeURIComponent(interval)}${debugParam}`);
+        if (!res.ok) return;
+        const chartRes = await res.json();
+        let ch: any[] = [];
+        if (Array.isArray(chartRes?.chart)) ch = chartRes.chart;
+        else if (chartRes?.chart?.points && Array.isArray(chartRes.chart.points)) ch = chartRes.chart.points;
+        const chartPoints: ChartData[] = ch
+          .map((p: any) => {
+            const price = Number(p.price ?? p.close ?? p.adjclose ?? 0);
+            let timeStr = '';
+            if (p.time) timeStr = String(p.time);
+            else if (p.timestamp) {
+              const ms = Number(p.timestamp) * 1000;
+              if (Number.isFinite(ms)) timeStr = new Date(ms).toISOString().split('T')[0];
+            }
+            return { time: timeStr, price } as ChartData;
+          })
+          .filter((pt) => Number.isFinite(pt.price) && pt.price > 0 && !!pt.time);
+        setChartData(chartPoints);
+        setHoveredPoint(null);
+      } catch {}
+    };
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedRange]);
 
   return (
     <div className="bg-card rounded-xl border border-border p-6 shadow-sm stock-search">
@@ -369,9 +437,23 @@ export function StockSearch() {
             </div>
           </div>
 
-          {/* Chart */}
+      {/* Chart */}
           <div className="bg-background rounded-lg p-4 border border-border">
-            <h4 className="font-semibold mb-4">{translate(preferences.language, 'search.chartTitle', '30-Day Price Chart')}</h4>
+        <div className="flex items-center justify-between mb-4 gap-3">
+          <h4 className="font-semibold">{translate(preferences.language, 'search.chartTitle', 'Price Chart')}</h4>
+          <div className="flex flex-wrap gap-2">
+            {RANGE_OPTIONS.map(opt => (
+              <button
+                key={opt.key}
+                onClick={() => setSelectedRange(opt.key)}
+                className={`px-2.5 py-1.5 rounded-md text-xs border ${selectedRange === opt.key ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted hover:bg-accent/30 border-border'}`}
+                aria-pressed={selectedRange === opt.key}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
             <div className="h-64" role="img" aria-label="30 day price chart">
               <RC width="100%" height="100%">
                 <AC
@@ -398,7 +480,7 @@ export function StockSearch() {
                   </defs>
                   <CG strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
                   <XAx dataKey="time" axisLine={false} tickLine={false} tickMargin={8} hide={false} />
-                  <YAx axisLine={false} tickLine={false} tickMargin={8} width={56} />
+                  <YAx axisLine={false} tickLine={false} tickMargin={8} width={56} domain={yDomain} />
                   <TT
                     content={({ active, payload }: any) => {
                       if (!active || !payload?.length) return null;

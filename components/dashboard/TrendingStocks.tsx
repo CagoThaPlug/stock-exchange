@@ -79,7 +79,7 @@ export function TrendingStocks() {
     };
     
     load();
-    const interval = setInterval(load, 60000);
+    const interval = setInterval(load, 900000);
     return () => { abort = true; clearInterval(interval); };
   }, []);
 
