@@ -125,21 +125,24 @@ async function chart(symbol: string, opts: { period1: Date; period2: Date; inter
 
 async function quoteSummary(symbol: string, modules: string[]): Promise<any | null> {
   const mod = modules.join(',');
+  // Try v10 then v6, across query2 and query1 hosts
   const urls = [
     `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=${encodeURIComponent(mod)}`,
     `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=${encodeURIComponent(mod)}`,
+    `https://query2.finance.yahoo.com/v6/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=${encodeURIComponent(mod)}`,
+    `https://query1.finance.yahoo.com/v6/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=${encodeURIComponent(mod)}`,
   ];
   let data: any = null;
   let lastError: unknown = null;
   for (const u of urls) {
     try {
       data = await fetchJson(u);
-      break;
+      if (data) break;
     } catch (e) {
       lastError = e;
     }
   }
-  if (!data) return null;
+  if (!data && lastError) return null;
   const result = data?.quoteSummary?.result?.[0] || null;
   return result;
 }
@@ -149,6 +152,10 @@ async function fetchLatestSharesOutstanding(symbol: string): Promise<number | nu
   const types = [
     'sharesOutstanding',
     'trailingSharesOutstanding',
+    'impliedSharesOutstanding',
+    'floatShares',
+    'basicAverageShares',
+    'dilutedAverageShares',
     'annualBasicAverageShares',
     'annualDilutedAverageShares',
     'quarterlyBasicAverageShares',
@@ -181,7 +188,90 @@ async function fetchLatestSharesOutstanding(symbol: string): Promise<number | nu
   return null;
 }
 
-const yahooFinance = { quote, screener, search, chart, quoteSummary, fetchLatestSharesOutstanding };
+async function fetchLatestMarketCap(symbol: string): Promise<number | null> {
+  // Try multiple series that may contain market cap or close proxy (EV)
+  const types = [
+    'marketCap',
+    'annualMarketCap',
+    'quarterlyMarketCap',
+    'enterpriseValue',
+  ];
+  const params = `type=${encodeURIComponent(types.join(','))}&merge=false&period1=0`;
+  const urls = [
+    `https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(symbol)}?${params}`,
+    `https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(symbol)}?${params}`,
+  ];
+  for (const u of urls) {
+    try {
+      const data = await fetchJson(u);
+      const result = data?.timeseries?.result?.[0] || {};
+      for (const key of types) {
+        const series = result?.[key];
+        if (Array.isArray(series) && series.length) {
+          for (let i = series.length - 1; i >= 0; i--) {
+            const raw = series[i]?.reportedValue?.raw ?? series[i]?.reportedValue ?? series[i]?.raw;
+            if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) {
+              return raw;
+            }
+          }
+        }
+      }
+    } catch {
+      // try next url
+    }
+  }
+  return null;
+}
+
+function parseCompact(value: string): number | null {
+  if (!value) return null;
+  const v = value.replace(/[,\s]/g, '').toUpperCase();
+  const match = v.match(/^(\d+(?:\.\d+)?)([KMBT])?$/);
+  if (!match) return Number.isFinite(Number(v)) ? Number(v) : null;
+  const num = parseFloat(match[1]);
+  const suffix = match[2] as 'K' | 'M' | 'B' | 'T' | undefined;
+  const mult = suffix === 'T' ? 1e12 : suffix === 'B' ? 1e9 : suffix === 'M' ? 1e6 : suffix === 'K' ? 1e3 : 1;
+  return num * mult;
+}
+
+async function scrapeQuotePage(symbol: string): Promise<{ marketCap?: number; sharesOutstanding?: number } | null> {
+  const urls = [
+    `https://finance.yahoo.com/quote/${encodeURIComponent(symbol)}?p=${encodeURIComponent(symbol)}`,
+    `https://finance.yahoo.com/quote/${encodeURIComponent(symbol)}`,
+    `https://finance.yahoo.com/quote/${encodeURIComponent(symbol)}/key-statistics?p=${encodeURIComponent(symbol)}`,
+  ];
+  for (const url of urls) {
+    try {
+      const res = await fetchWithTimeout(url, { timeoutMs: 8000 });
+      if (!res.ok) continue;
+      const html = await res.text();
+      // Try extracting raw values from embedded JSON
+      const mcRaw = html.match(/"marketCap"\s*:\s*\{\s*"raw"\s*:\s*(\d+(?:\.\d+)?)\s*[,}]/);
+      const soRaw = html.match(/"sharesOutstanding"\s*:\s*\{\s*"raw"\s*:\s*(\d+(?:\.\d+)?)\s*[,}]/);
+      if (mcRaw || soRaw) {
+        const marketCap = mcRaw ? Number(mcRaw[1]) : undefined;
+        const sharesOutstanding = soRaw ? Number(soRaw[1]) : undefined;
+        return { ...(Number.isFinite(marketCap as number) ? { marketCap: marketCap as number } : {}), ...(Number.isFinite(sharesOutstanding as number) ? { sharesOutstanding: sharesOutstanding as number } : {}) };
+      }
+      // Fallback to summary table value like data-test="MARKET_CAP-value">1.29T
+      const capMatch = html.match(/data-test=\"MARKET_CAP-value\"[^>]*>\s*([^<\s][^<]*)\s*<\/td>/i) || html.match(/>\s*Market Cap\s*<[^>]*>\s*([^<\s][^<]*)\s*</i);
+      const sharesMatch = html.match(/data-test=\"SHARES_OUTSTANDING-value\"[^>]*>\s*([^<\s][^<]*)\s*<\/td>/i) || html.match(/>\s*Shares Outstanding\s*<[^>]*>\s*([^<\s][^<]*)\s*</i);
+      const marketCap = capMatch ? parseCompact(capMatch[1]) : null;
+      const sharesOutstanding = sharesMatch ? parseCompact(sharesMatch[1]) : null;
+      if ((marketCap && marketCap > 0) || (sharesOutstanding && sharesOutstanding > 0)) {
+        return {
+          ...(marketCap && marketCap > 0 ? { marketCap } : {}),
+          ...(sharesOutstanding && sharesOutstanding > 0 ? { sharesOutstanding } : {}),
+        } as any;
+      }
+    } catch {
+      // try next url
+    }
+  }
+  return null;
+}
+
+const yahooFinance = { quote, screener, search, chart, quoteSummary, fetchLatestSharesOutstanding, fetchLatestMarketCap, scrapeQuotePage };
 
 export default yahooFinance;
 

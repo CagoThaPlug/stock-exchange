@@ -72,7 +72,7 @@ export function TrendingStocks() {
         ];
         setStocks(mapped);
       } catch (error) {
-        console.error('Failed to load market data:', error);
+        
       } finally {
         if (!abort) setLoading(false);
       }

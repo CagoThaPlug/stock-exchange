@@ -87,7 +87,6 @@ export async function POST(request: NextRequest) {
       }
     );
   } catch (error) {
-    console.error('Chat API error:', error);
     return NextResponse.json(
       { error: `Failed to process chat message: ${(error as Error).message || 'unknown error'}` },
       { status: 500 }
@@ -121,7 +120,7 @@ IMPORTANT: Keep responses under 100 words. Be concise and direct. Always include
   let lastError: { error: string; status?: number } | null = null;
 
   for (const model of models) {
-    console.log(`🔍 Trying Groq model: ${model}`);
+    
     try {
       const payload = {
         messages: [
@@ -152,14 +151,13 @@ IMPORTANT: Keep responses under 100 words. Be concise and direct. Always include
 
       if (!res.ok) {
         const errorText = await res.text().catch(() => '');
-        console.warn(`❌ Groq API ${res.status} for ${model}: ${errorText}`);
         
         // Handle specific error types
         if (res.status === 401) {
           return { error: 'Invalid Groq API key. Check your GROQ_API_KEY in .env.local', status: 401 };
         }
         if (res.status === 429) {
-          console.log('⏳ Groq rate limit hit, trying next model...');
+          
           lastError = { error: `Rate limit exceeded for ${model}`, status: 429 };
           continue;
         }
@@ -172,14 +170,14 @@ IMPORTANT: Keep responses under 100 words. Be concise and direct. Always include
       const content = data.choices?.[0]?.message?.content;
 
       if (content && content.trim()) {
-        console.log(`✅ Groq model succeeded: ${model}`);
+        
         return { text: content.trim() };
       }
 
-      console.warn(`⚠️ Empty content from Groq model ${model}`);
+      
       lastError = { error: `Groq API returned empty content (model: ${model})` };
     } catch (err) {
-      console.error(`💥 Error with Groq model ${model}:`, err);
+      
       lastError = { error: `Network error: ${(err as Error).message}`, status: 500 };
     }
   }

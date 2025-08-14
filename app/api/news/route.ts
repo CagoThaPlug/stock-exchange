@@ -88,7 +88,6 @@ export async function GET(request: NextRequest) {
     const articles = deduped.slice(0, limit).map((a, idx) => ({ ...a, id: `${idx}-${a.title}` }));
     return NextResponse.json({ articles, totalResults: articles.length });
   } catch (error) {
-    console.error('News API error:', error);
     return NextResponse.json({ articles: [], totalResults: 0 }, { status: 200 });
   }
 }

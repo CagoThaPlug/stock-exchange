@@ -52,7 +52,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         const parsed = JSON.parse(saved);
         setPreferences({ ...defaultPreferences, ...parsed });
       } catch (error) {
-        console.warn('Failed to parse saved preferences:', error);
       }
     }
   }, []);

@@ -110,6 +110,41 @@ export async function GET(req: NextRequest) {
       };
     });
 
+    // Second-pass enrichment: for any stock with 0 change, try to refill from a fresh quote
+    // to reduce 0.00% placeholders when upstream omitted percent fields.
+    for (let i = 0; i < sectors.length; i++) {
+      const s = sectors[i];
+      const zeroes = s.stocks.filter((x) => !Number.isFinite(x.change) || x.change === 0).map((x) => x.symbol);
+      if (zeroes.length === 0) continue;
+      for (let j = 0; j < s.stocks.length; j++) {
+        const sym = s.stocks[j].symbol;
+        if (!zeroes.includes(sym)) continue;
+        try {
+          const q: any = await yahooFinance.quote(sym as any).catch(() => null);
+          if (q) {
+            const candidates = [
+              Number(q?.regularMarketChangePercent),
+              Number(q?.postMarketChangePercent),
+              Number(q?.preMarketChangePercent),
+            ];
+            let pct = candidates.find((v) => Number.isFinite(v)) as number | undefined;
+            if (!Number.isFinite(pct as number)) {
+              const change = Number(q?.regularMarketChange ?? NaN);
+              const prev = Number(q?.regularMarketPreviousClose ?? NaN);
+              const price = Number(q?.regularMarketPrice ?? NaN);
+              if (Number.isFinite(change) && Number.isFinite(prev) && prev !== 0) pct = (change / prev) * 100;
+              else if (Number.isFinite(price) && Number.isFinite(prev) && prev !== 0) pct = ((price - prev) / prev) * 100;
+            }
+            if (Number.isFinite(pct as number) && (pct as number) !== 0) {
+              s.stocks[j].change = pct as number;
+            }
+          }
+        } catch {}
+      }
+      // Recompute sector change as sum of shown movers
+      s.change = s.stocks.reduce((acc, x) => acc + (Number.isFinite(x.change) ? x.change : 0), 0);
+    }
+
     // Fallback: if we failed to get any stock-level data (e.g., quote 401), use sector ETFs to estimate
     const noData = sectors.every((s) => !s.marketCap || s.marketCap === 0);
     let usedEtfFallback = false;

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, memo, useState, useEffect, useRef, useCallback } from 'react';
+import { useMemo, memo, useState, useEffect, useCallback } from 'react';
 import { useTheme } from 'next-themes';
 import { Moon, Sun, Settings, Accessibility } from 'lucide-react';
 import { supportedLanguages, translate } from '@/lib/i18n';
@@ -184,9 +184,15 @@ const SettingsPanel = memo(function SettingsPanel({
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Element;
-      if (!target.closest('[data-settings-panel]')) {
-        onClose();
+      if (
+        target.closest('[data-settings-panel]') ||
+        target.closest('[data-settings-trigger]') ||
+        target.closest('[data-radix-select-trigger]') ||
+        target.closest('[data-radix-select-content]')
+      ) {
+        return;
       }
+      onClose();
     };
 
     document.addEventListener('mousedown', handleClickOutside);
@@ -369,14 +375,16 @@ const SettingsPanel = memo(function SettingsPanel({
 
 // Main Header Component
 export function Header() {
-  const { theme, setTheme } = useTheme();
+  const { theme, resolvedTheme, setTheme } = useTheme();
   const { preferences, updatePreferences } = usePreferences();
   const { settings, updateSettings } = useAccessibility();
   const [showSettings, setShowSettings] = useState(false);
 
   const toggleTheme = useCallback(() => {
-    setTheme(theme === 'dark' ? 'light' : 'dark');
-  }, [theme, setTheme]);
+    const nextTheme = (resolvedTheme || theme) === 'dark' ? 'light' : 'dark';
+    setTheme(nextTheme);
+    updatePreferences({ colorTheme: nextTheme });
+  }, [theme, resolvedTheme, setTheme, updatePreferences]);
 
   const toggleHighContrast = useCallback(() => {
     updateSettings({ highContrast: !settings.highContrast });
@@ -467,12 +475,22 @@ export function Header() {
 
             {/* Theme Toggle */}
             <button
-              onClick={toggleTheme}
-              className="p-2 rounded-lg bg-muted hover:bg-muted/80 transition-colors"
-              aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
-              title="Toggle Theme"
+              onClick={settings.highContrast ? undefined : toggleTheme}
+              disabled={settings.highContrast}
+              className={`p-2 rounded-lg bg-muted transition-colors ${settings.highContrast ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted/80'}`}
+              aria-disabled={settings.highContrast}
+              aria-label={
+                settings.highContrast
+                  ? 'Theme toggle disabled in High Contrast mode'
+                  : `Switch to ${(resolvedTheme || theme) === 'dark' ? 'light' : 'dark'} theme`
+              }
+              title={
+                settings.highContrast
+                  ? 'Theme toggle disabled in High Contrast mode'
+                  : `Switch to ${(resolvedTheme || theme) === 'dark' ? 'light' : 'dark'} theme`
+              }
             >
-              {theme === 'dark' ? (
+              {(resolvedTheme || theme) === 'dark' ? (
                 <Sun className="w-4 h-4" />
               ) : (
                 <Moon className="w-4 h-4" />
@@ -486,6 +504,7 @@ export function Header() {
                 className="p-2 rounded-lg bg-muted hover:bg-muted/80 transition-colors"
                 aria-label="Open settings"
                 title="Settings"
+                data-settings-trigger
               >
                 <Settings className="w-4 h-4" />
               </button>

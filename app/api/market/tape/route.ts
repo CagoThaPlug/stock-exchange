@@ -202,7 +202,6 @@ export async function GET(req: NextRequest) {
     });
     
   } catch (error) {
-    console.error('Market data API error:', error);
     
     const errorResponse: MarketDataResponse = {
       items: [],
@@ -262,7 +261,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(response);
     
   } catch (error) {
-    console.error('Custom symbols API error:', error);
     return NextResponse.json(
       { 
         items: [], 

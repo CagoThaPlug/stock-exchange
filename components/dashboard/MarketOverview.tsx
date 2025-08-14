@@ -115,7 +115,6 @@ export function MarketOverview() {
         }
         
         const data = await res.json();
-        console.log('API Response:', data); // Debug log
         
         if (data.error) {
           throw new Error(data.error);

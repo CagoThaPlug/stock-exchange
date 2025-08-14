@@ -221,6 +221,13 @@ export async function fetchQuote(symbol: string): Promise<Quote | null> {
       marketCap: Number(q.marketCap ?? 0),
       sector: q.sector || undefined,
     } as Quote;
+    // Prefer calculating market cap from price * sharesOutstanding when possible
+    if ((!base.marketCap || base.marketCap === 0) && Number.isFinite(base.price) && base.price > 0) {
+      const sharesFromQuote = Number((q as any)?.sharesOutstanding ?? 0);
+      if (Number.isFinite(sharesFromQuote) && sharesFromQuote > 0) {
+        base.marketCap = base.price * sharesFromQuote;
+      }
+    }
     if (base.marketCap && base.volume) return base;
     // Enrich with quoteSummary if partial
     try {
@@ -239,8 +246,45 @@ export async function fetchQuote(symbol: string): Promise<Quote | null> {
             base.volume) ?? 0
         );
         base.name = summary?.price?.shortName || summary?.price?.longName || base.name;
+        // If market cap still missing, compute via sharesOutstanding from summary
+        if ((!base.marketCap || base.marketCap === 0) && Number.isFinite(base.price) && base.price > 0) {
+          const sharesFromSummary = Number(
+            summary?.defaultKeyStatistics?.sharesOutstanding?.raw ??
+            summary?.price?.sharesOutstanding?.raw ?? 0
+          );
+          if (Number.isFinite(sharesFromSummary) && sharesFromSummary > 0) {
+            base.marketCap = base.price * sharesFromSummary;
+          }
+        }
       }
     } catch {}
+    if (base.marketCap && base.volume) return base;
+
+    // Last resort: compute market cap from latest shares outstanding if price is available
+    if ((!base.marketCap || base.marketCap === 0) && Number.isFinite(base.price) && base.price > 0) {
+      try {
+        // Try a direct latest market cap from timeseries
+        const direct = await (yahooFinance as any).fetchLatestMarketCap?.(symbol);
+        if (typeof direct === 'number' && Number.isFinite(direct) && direct > 0) {
+          base.marketCap = direct;
+        }
+        if (!base.marketCap) {
+          // Fallback to price * shares outstanding
+          const shares = await (yahooFinance as any).fetchLatestSharesOutstanding?.(symbol);
+          if (typeof shares === 'number' && Number.isFinite(shares) && shares > 0) {
+            base.marketCap = base.price * shares;
+          }
+        }
+        // As an additional fallback, scrape Yahoo quote page
+        if (!base.marketCap || base.marketCap === 0) {
+          const scraped = await (yahooFinance as any).scrapeQuotePage?.(symbol);
+          const sCap = Number((scraped as any)?.marketCap ?? 0);
+          const sShares = Number((scraped as any)?.sharesOutstanding ?? 0);
+          if (Number.isFinite(sCap) && sCap > 0) base.marketCap = sCap;
+          else if (Number.isFinite(sShares) && sShares > 0) base.marketCap = base.price * sShares;
+        }
+      } catch {}
+    }
     if (base.marketCap && base.volume) return base;
     // otherwise fall through to chart fallback to fill remaining
     throw new Error('need-fallback');
@@ -272,6 +316,15 @@ export async function fetchQuote(symbol: string): Promise<Quote | null> {
         summary?.summaryDetail?.marketCap?.raw ?? 0
       );
       if (!Number.isFinite(mcap) || mcap === 0) {
+        // Try a direct latest market cap from timeseries
+        try {
+          const direct = await (yahooFinance as any).fetchLatestMarketCap?.(symbol);
+          if (typeof direct === 'number' && Number.isFinite(direct) && direct > 0) {
+            mcap = direct;
+          }
+        } catch {}
+      }
+      if (!Number.isFinite(mcap) || mcap === 0) {
         // Approximate market cap using price * sharesOutstanding if present
         let shares = Number(
           summary?.defaultKeyStatistics?.sharesOutstanding?.raw ??
@@ -281,6 +334,13 @@ export async function fetchQuote(symbol: string): Promise<Quote | null> {
           try {
             const fetched = await (yahooFinance as any).fetchLatestSharesOutstanding?.(symbol);
             if (typeof fetched === 'number' && Number.isFinite(fetched) && fetched > 0) shares = fetched;
+          } catch {}
+        }
+        if (!Number.isFinite(shares) || shares === 0) {
+          try {
+            const scraped = await (yahooFinance as any).scrapeQuotePage?.(symbol);
+            const sShares = Number((scraped as any)?.sharesOutstanding ?? 0);
+            if (Number.isFinite(sShares) && sShares > 0) shares = sShares;
           } catch {}
         }
         if (Number.isFinite(shares) && shares > 0 && Number.isFinite(last) && last > 0) {
@@ -318,11 +378,10 @@ export type ChartPoint = { time: string; price: number };
 
 export async function fetchChart(symbol: string, range: string = '1mo', interval: string = '1d'): Promise<ChartPoint[]> {
   if (!symbol?.trim()) {
-    if (process.env.NODE_ENV !== 'production') console.log('No symbol provided');
     return [];
   }
 
-  if (process.env.NODE_ENV !== 'production') console.log(`Fetching chart for ${symbol}, range: ${range}, interval: ${interval}`);
+  
 
   // Valid intervals for yahoo-finance2
   const allowedIntervals = ['1m', '2m', '5m', '15m', '30m', '60m', '90m', '1h', '1d', '5d', '1wk', '1mo', '3mo'] as const;
@@ -376,33 +435,7 @@ export async function fetchChart(symbol: string, range: string = '1mo', interval
     }
   }
 
-  if (process.env.NODE_ENV !== 'production') console.log('All candidates failed, returning empty array');
   return [];
 }
 
 // Alternative simpler version for testing
-export async function fetchChartSimple(symbol: string): Promise<ChartPoint[]> {
-  try {
-    if (process.env.NODE_ENV !== 'production') console.log(`Fetching simple chart for ${symbol}`);
-    
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setMonth(startDate.getMonth() - 1); // 1 month ago
-    
-    const result = await yahooFinance.chart(symbol, {
-      period1: startDate,
-      period2: endDate,
-      interval: '1d'
-    });
-
-    if (process.env.NODE_ENV !== 'production') console.log('Simple chart response:', result);
-    
-    // Log the full structure to understand what we're getting
-    if (process.env.NODE_ENV !== 'production') console.log('Response keys:', Object.keys(result || {}));
-    
-    return [];
-  } catch (error) {
-    if (process.env.NODE_ENV !== 'production') console.error('Simple chart error:', error);
-    return [];
-  }
-}
