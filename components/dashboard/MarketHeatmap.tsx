@@ -20,6 +20,7 @@ export function MarketHeatmap() {
   const [sectors, setSectors] = useState<SectorData[]>([]);
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
   const [hoveredSector, setHoveredSector] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const { requestSelection } = useStockSelection();
   const { preferences } = usePreferences();
   const { convertFromUSD } = useCurrency();
@@ -27,8 +28,9 @@ export function MarketHeatmap() {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    const fetchData = async () => {
       try {
+        setLoading(true);
         const debug = process.env.NEXT_PUBLIC_API_DEBUG ? '?debug=1' : '';
         const { apiFetch } = await import('@/lib/utils');
         const res = await apiFetch(`/api/market/heatmap${debug}`);
@@ -66,9 +68,18 @@ export function MarketHeatmap() {
         setSectors(normalized);
       } catch {
         setSectors([]);
+      } finally {
+        setLoading(false);
       }
-    })();
-    return () => { cancelled = true; };
+    };
+    
+    fetchData();
+    const interval = setInterval(fetchData, 30000); // Refresh every 30 seconds
+    
+    return () => { 
+      cancelled = true; 
+      clearInterval(interval);
+    };
   }, [preferences.language]);
 
   const getIntensityColor = (change: number, isHovered: boolean = false): string => {
@@ -117,9 +128,14 @@ export function MarketHeatmap() {
             <BarChart3 className="w-6 h-6 text-primary" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text text-transparent">
-              {translate(preferences.language, 'heatmap.title', 'Market Heatmap')}
-            </h2>
+            <div className="flex items-center space-x-3">
+              <h2 className="text-2xl font-bold bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text text-transparent">
+                {translate(preferences.language, 'heatmap.title', 'Market Heatmap')}
+              </h2>
+              {loading && (
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
+              )}
+            </div>
             <p className="text-sm text-muted-foreground mt-1">
               {translate(preferences.language, 'heatmap.subtitle', 'Real-time sector performance overview')}
             </p>

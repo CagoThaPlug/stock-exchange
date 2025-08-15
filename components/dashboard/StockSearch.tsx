@@ -84,7 +84,7 @@ const RANGE_OPTIONS = [
 ] as const;
 
 // Memoized components to prevent unnecessary re-renders
-const SearchInput = React.memo(({ 
+const SearchInput = React.memo(function SearchInput({ 
   query, 
   setQuery, 
   onFocus, 
@@ -98,7 +98,8 @@ const SearchInput = React.memo(({
   onBlur: () => void;
   onKeyDown: (e: React.KeyboardEvent) => void;
   placeholder: string;
-}) => (
+}) {
+  return (
   <div className="relative">
     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
     <input
@@ -114,9 +115,10 @@ const SearchInput = React.memo(({
       aria-label="Search stocks"
     />
   </div>
-));
+  );
+});
 
-const PriceCard = React.memo(({ 
+const PriceCard = React.memo(function PriceCard({ 
   title, 
   value, 
   subtitle, 
@@ -128,7 +130,8 @@ const PriceCard = React.memo(({
   subtitle?: string;
   change?: string;
   icon: React.ComponentType<any>;
-}) => (
+}) {
+  return (
   <div className="bg-background rounded-lg p-4 border border-border">
     <div className="flex items-center space-x-2 mb-2">
       <Icon className="w-4 h-4 text-primary" />
@@ -138,7 +141,8 @@ const PriceCard = React.memo(({
     {subtitle && <p className="text-xs text-muted-foreground h-4">{subtitle}</p>}
     {change && <p className="text-sm">{change}</p>}
   </div>
-));
+  );
+});
 
 export function StockSearch() {
   const [query, setQuery] = useState('');

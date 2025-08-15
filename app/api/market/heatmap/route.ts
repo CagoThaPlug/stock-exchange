@@ -54,6 +54,7 @@ export async function GET(req: NextRequest) {
         const missingSymbols = allSymbols.filter(s => !receivedSymbols.has(s));
         if (missingSymbols.length > 0) {
           console.log('❌ Missing symbols from bulk fetch:', missingSymbols);
+          console.log('📊 Success rate:', `${receivedSymbols.size}/${allSymbols.length} (${((receivedSymbols.size/allSymbols.length)*100).toFixed(1)}%)`);
         }
       }
     } catch (error) {
@@ -61,6 +62,49 @@ export async function GET(req: NextRequest) {
         console.log('❌ Yahoo Finance bulk quote failed:', error);
       }
       quotes = [];
+    }
+    
+    // If bulk fetch failed or returned very few results, try smaller batches
+    if (quotes.length < allSymbols.length * 0.5) {
+      if (debug) {
+        console.log('🔄 Bulk fetch returned few results, trying batch approach...');
+      }
+      
+      const batchSize = 8;
+      const batches = [];
+      for (let i = 0; i < allSymbols.length; i += batchSize) {
+        batches.push(allSymbols.slice(i, i + batchSize));
+      }
+      
+      const batchResults = await Promise.allSettled(
+        batches.map(async (batch, index) => {
+          try {
+            if (debug) console.log(`📦 Fetching batch ${index + 1}/${batches.length}: ${batch.join(', ')}`);
+            const res = await yahooFinance.quote(batch);
+            const batchQuotes = Array.isArray(res) ? res : [res];
+            if (debug) console.log(`✅ Batch ${index + 1} returned ${batchQuotes.length}/${batch.length} quotes`);
+            return batchQuotes;
+          } catch (error) {
+            if (debug) console.log(`❌ Batch ${index + 1} failed:`, error);
+            return [];
+          }
+        })
+      );
+      
+      // Merge successful batch results
+      const additionalQuotes = batchResults
+        .filter(result => result.status === 'fulfilled')
+        .flatMap(result => result.value)
+        .filter(q => q?.symbol);
+      
+      // Combine with original quotes, avoiding duplicates
+      const existingSymbols = new Set(quotes.map(q => q?.symbol));
+      const newQuotes = additionalQuotes.filter(q => !existingSymbols.has(q.symbol));
+      quotes = [...quotes, ...newQuotes];
+      
+      if (debug) {
+        console.log(`🔄 After batch retry: ${quotes.length}/${allSymbols.length} total quotes`);
+      }
     }
     const symbolToQuote = new Map<string, Quote>();
     for (const q of quotes) if (q?.symbol) symbolToQuote.set(q.symbol, q);
