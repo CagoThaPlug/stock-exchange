@@ -93,7 +93,7 @@ export async function GET(req: NextRequest) {
       
       // Merge successful batch results
       const additionalQuotes = batchResults
-        .filter(result => result.status === 'fulfilled')
+        .filter((result): result is PromiseFulfilledResult<any[]> => result.status === 'fulfilled')
         .flatMap(result => result.value)
         .filter(q => q?.symbol);
       
@@ -273,7 +273,7 @@ export async function GET(req: NextRequest) {
         const q: any = await yahooFinance.quote(symbol as any).catch(() => null);
         clearTimeout(timeoutId);
         
-        if (q) {
+          if (q) {
           const pct = deriveChangePctFromQuote(q);
           if (Math.abs(pct) > 0.001) return pct;
         }
