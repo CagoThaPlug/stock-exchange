@@ -257,6 +257,77 @@ export async function onRequestGet(context: { request: Request }) {
       };
     });
 
+    // Emergency individual stock fetch for sectors with all-zero data
+    const emergencyFetch = async () => {
+      const zeroSectors = sectors.filter(s => Math.abs(s.change) < 0.001);
+      if (zeroSectors.length === 0) return sectors;
+      
+      if (debug) {
+        console.log(`\n🚨 Emergency individual fetch for ${zeroSectors.length} zero sectors:`, zeroSectors.map(s => s.name).join(', '));
+      }
+      
+      const updatedSectors = await Promise.all(
+        sectors.map(async (sector) => {
+          if (Math.abs(sector.change) > 0.001) return sector; // Skip sectors with data
+          
+          const sectorSymbols = SECTOR_SYMBOLS[sector.name] || [];
+          if (debug) console.log(`🔍 Individual fetch for ${sector.name}: ${sectorSymbols.join(', ')}`);
+          
+          // Fetch each stock individually
+          const individualResults = await Promise.allSettled(
+            sectorSymbols.map(async (symbol) => {
+              try {
+                const q: any = await yahooFinance.quote(symbol as any);
+                const change = deriveChangePctFromQuote(q, debug);
+                if (debug && Math.abs(change) > 0.001) {
+                  console.log(`💎 Individual fetch success: ${symbol} = ${change.toFixed(2)}%`);
+                }
+                return { symbol, change, quote: q };
+              } catch (error) {
+                if (debug) console.log(`❌ Individual fetch failed for ${symbol}:`, error);
+                return { symbol, change: 0, quote: null };
+              }
+            })
+          );
+          
+          const validResults = individualResults
+            .filter((result): result is PromiseFulfilledResult<{symbol: string, change: number, quote: any}> => 
+              result.status === 'fulfilled' && Math.abs(result.value.change) > 0.001
+            )
+            .map(result => result.value);
+          
+          if (validResults.length === 0) {
+            if (debug) console.log(`❌ No valid individual results for ${sector.name}`);
+            return sector;
+          }
+          
+          // Take top 4 movers from individual results
+          const topStocks = validResults
+            .sort((a, b) => Math.abs(b.change) - Math.abs(a.change))
+            .slice(0, 4)
+            .map(r => ({ symbol: r.symbol, change: r.change }));
+          
+          const sectorChange = topStocks.reduce((acc, stock) => acc + stock.change, 0);
+          
+          if (debug) {
+            console.log(`🎯 Emergency fetch success for ${sector.name}: ${sectorChange.toFixed(2)}%`);
+            console.log(`   Top stocks:`, topStocks.map(s => `${s.symbol}: ${s.change.toFixed(2)}%`).join(', '));
+          }
+          
+          return {
+            ...sector,
+            stocks: topStocks,
+            change: sectorChange
+          };
+        })
+      );
+      
+      return updatedSectors;
+    };
+    
+    // Run emergency fetch first
+    sectors = await emergencyFetch();
+
     const noData = sectors.every((s) => !s.marketCap || s.marketCap === 0);
     let usedEtfFallback = false;
     if (noData) {

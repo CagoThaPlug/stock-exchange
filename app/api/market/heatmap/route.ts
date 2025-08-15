@@ -302,7 +302,78 @@ export async function GET(req: NextRequest) {
       return 0;
     };
 
-    // Process sectors in parallel with limited concurrency
+    // Emergency individual stock fetch for sectors with all-zero data
+    const emergencyFetch = async () => {
+      const zeroSectors = sectors.filter(s => Math.abs(s.change) < 0.001);
+      if (zeroSectors.length === 0) return sectors;
+      
+      if (debug) {
+        console.log(`\n🚨 Emergency individual fetch for ${zeroSectors.length} zero sectors:`, zeroSectors.map(s => s.name).join(', '));
+      }
+      
+      const updatedSectors = await Promise.all(
+        sectors.map(async (sector) => {
+          if (Math.abs(sector.change) > 0.001) return sector; // Skip sectors with data
+          
+          const sectorSymbols = SECTOR_SYMBOLS[sector.name] || [];
+          if (debug) console.log(`🔍 Individual fetch for ${sector.name}: ${sectorSymbols.join(', ')}`);
+          
+          // Fetch each stock individually with more aggressive timeout
+          const individualResults = await Promise.allSettled(
+            sectorSymbols.map(async (symbol) => {
+              try {
+                const q: any = await yahooFinance.quote(symbol as any);
+                const change = deriveChangePctFromQuote(q, debug);
+                if (debug && Math.abs(change) > 0.001) {
+                  console.log(`💎 Individual fetch success: ${symbol} = ${change.toFixed(2)}%`);
+                }
+                return { symbol, change, quote: q };
+              } catch (error) {
+                if (debug) console.log(`❌ Individual fetch failed for ${symbol}:`, error);
+                return { symbol, change: 0, quote: null };
+              }
+            })
+          );
+          
+          const validResults = individualResults
+            .filter((result): result is PromiseFulfilledResult<{symbol: string, change: number, quote: any}> => 
+              result.status === 'fulfilled' && Math.abs(result.value.change) > 0.001
+            )
+            .map(result => result.value);
+          
+          if (validResults.length === 0) {
+            if (debug) console.log(`❌ No valid individual results for ${sector.name}`);
+            return sector;
+          }
+          
+          // Take top 4 movers from individual results
+          const topStocks = validResults
+            .sort((a, b) => Math.abs(b.change) - Math.abs(a.change))
+            .slice(0, 4)
+            .map(r => ({ symbol: r.symbol, change: r.change }));
+          
+          const sectorChange = topStocks.reduce((acc, stock) => acc + stock.change, 0);
+          
+          if (debug) {
+            console.log(`🎯 Emergency fetch success for ${sector.name}: ${sectorChange.toFixed(2)}%`);
+            console.log(`   Top stocks:`, topStocks.map(s => `${s.symbol}: ${s.change.toFixed(2)}%`).join(', '));
+          }
+          
+          return {
+            ...sector,
+            stocks: topStocks,
+            change: sectorChange
+          };
+        })
+      );
+      
+      return updatedSectors;
+    };
+    
+    // Run emergency fetch first
+    sectors = await emergencyFetch();
+    
+    // Process sectors in parallel with limited concurrency (for any remaining zeros)
     const enhancedSectors = await Promise.all(
       sectors.map(async (sector) => {
         const problematicStocks = sector.stocks.filter((stock) => 
@@ -310,7 +381,7 @@ export async function GET(req: NextRequest) {
         );
         
         if (debug && problematicStocks.length > 0) {
-          console.log(`\n🔄 Retrying stocks in ${sector.name}:`, problematicStocks.map(s => s.symbol).join(', '));
+          console.log(`\n🔄 Final retry for stocks in ${sector.name}:`, problematicStocks.map(s => s.symbol).join(', '));
         }
         
         if (problematicStocks.length === 0) return sector;
@@ -319,7 +390,7 @@ export async function GET(req: NextRequest) {
         const stocksToRetry = problematicStocks.slice(0, 3);
         const retryResults = await Promise.allSettled(
           stocksToRetry.map((stock) => {
-            if (debug) console.log(`🔍 Retrying individual quote for ${stock.symbol}`);
+            if (debug) console.log(`🔍 Final retry for ${stock.symbol}`);
             return retryStockWithTimeout(stock.symbol);
           })
         );
@@ -328,9 +399,9 @@ export async function GET(req: NextRequest) {
           retryResults.forEach((result, index) => {
             const symbol = stocksToRetry[index].symbol;
             if (result.status === 'fulfilled') {
-              console.log(`✅ ${symbol} retry succeeded: ${result.value.toFixed(2)}%`);
+              console.log(`✅ ${symbol} final retry succeeded: ${result.value.toFixed(2)}%`);
             } else {
-              console.log(`❌ ${symbol} retry failed:`, result.reason);
+              console.log(`❌ ${symbol} final retry failed:`, result.reason);
             }
           });
         }
@@ -351,7 +422,7 @@ export async function GET(req: NextRequest) {
         const sectorChange = updatedStocks.reduce((acc, stock) => acc + (Number.isFinite(stock.change) ? stock.change : 0), 0);
         
         if (debug) {
-          console.log(`📊 ${sector.name} updated change: ${sector.change.toFixed(2)}% → ${sectorChange.toFixed(2)}%`);
+          console.log(`📊 ${sector.name} final change: ${sector.change.toFixed(2)}% → ${sectorChange.toFixed(2)}%`);
         }
         
         return { ...sector, stocks: updatedStocks, change: sectorChange };

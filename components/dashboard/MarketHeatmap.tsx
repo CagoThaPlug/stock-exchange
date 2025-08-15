@@ -150,6 +150,28 @@ export function MarketHeatmap() {
             {getChangeIcon(averageChange)}
             <span>{averageChange >= 0 ? '+' : ''}{averageChange.toFixed(2)}%</span>
           </div>
+          {process.env.NODE_ENV === 'development' && (
+            <button
+              onClick={async () => {
+                try {
+                  setLoading(true);
+                  const { apiFetch } = await import('@/lib/utils');
+                  const res = await apiFetch(`/api/market/heatmap?debug=1&timestamp=${Date.now()}`);
+                  const data = await res.json();
+                  console.log('🔍 Debug heatmap response:', data);
+                  alert('Debug data logged to console - check browser dev tools');
+                } catch (error) {
+                  console.error('Debug fetch failed:', error);
+                  alert('Debug fetch failed - check console');
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              className="mt-2 px-2 py-1 text-xs bg-primary/10 text-primary rounded hover:bg-primary/20 transition-colors"
+            >
+              🔍 Debug
+            </button>
+          )}
         </div>
       </div>
 
