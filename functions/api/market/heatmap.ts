@@ -88,7 +88,7 @@ export async function onRequestGet(context: { request: Request }) {
       
       // Merge successful batch results
       const additionalQuotes = batchResults
-        .filter(result => result.status === 'fulfilled')
+        .filter((result): result is PromiseFulfilledResult<any[]> => result.status === 'fulfilled')
         .flatMap(result => result.value)
         .filter(q => q?.symbol);
       
