@@ -73,6 +73,36 @@ const POPULAR_STOCKS = [
   { symbol: 'NVDA', name: 'NVIDIA Corp.' },
 ] as const;
 
+// Extended stock names database for better name resolution
+const STOCK_NAMES_DB = [
+  ...POPULAR_STOCKS,
+  // Major indices components and common stocks
+  { symbol: 'META', name: 'Meta Platforms Inc.' },
+  { symbol: 'GOOG', name: 'Alphabet Inc.' },
+  { symbol: 'NFLX', name: 'Netflix Inc.' },
+  { symbol: 'AMD', name: 'Advanced Micro Devices' },
+  { symbol: 'INTC', name: 'Intel Corporation' },
+  { symbol: 'CRM', name: 'Salesforce Inc.' },
+  { symbol: 'ORCL', name: 'Oracle Corporation' },
+  { symbol: 'ADBE', name: 'Adobe Inc.' },
+  { symbol: 'CSCO', name: 'Cisco Systems Inc.' },
+  { symbol: 'AVGO', name: 'Broadcom Inc.' },
+  { symbol: 'QCOM', name: 'QUALCOMM Inc.' },
+  { symbol: 'PEP', name: 'PepsiCo Inc.' },
+  { symbol: 'KO', name: 'The Coca-Cola Company' },
+  { symbol: 'DIS', name: 'The Walt Disney Company' },
+  { symbol: 'PYPL', name: 'PayPal Holdings Inc.' },
+  { symbol: 'CMCSA', name: 'Comcast Corporation' },
+  { symbol: 'PFE', name: 'Pfizer Inc.' },
+  { symbol: 'ABT', name: 'Abbott Laboratories' },
+  { symbol: 'COP', name: 'ConocoPhillips' },
+  { symbol: 'TMO', name: 'Thermo Fisher Scientific' },
+  { symbol: 'ACN', name: 'Accenture plc' },
+  { symbol: 'LLY', name: 'Eli Lilly and Company' },
+  { symbol: 'COST', name: 'Costco Wholesale Corporation' },
+  { symbol: 'DHR', name: 'Danaher Corporation' },
+] as const;
+
 const RANGE_OPTIONS = [
   { key: '1d', label: '1D', interval: '30m' },
   { key: '5d', label: '5D', interval: '1h' },
@@ -298,9 +328,34 @@ export function StockSearch() {
         }
       }
 
+      // Enhanced name resolution with multiple fallbacks
+      const resolveName = () => {
+        // 1. Use provided name override (from search results, trending stocks, etc.)
+        if (nameOverride && nameOverride.trim() && nameOverride !== symbol) {
+          return nameOverride.trim();
+        }
+        
+        // 2. Use API response name
+        if (q?.name && q.name.trim() && q.name !== symbol) {
+          return q.name.trim();
+        }
+        
+        // 3. Check our extended stock names database
+        const knownStock = STOCK_NAMES_DB.find(s => s.symbol.toUpperCase() === symbol.toUpperCase());
+        if (knownStock) {
+          return knownStock.name;
+        }
+        
+        // 4. Try to fetch additional info if we only have a symbol
+        // This could be expanded to call a different API endpoint for company info
+        
+        // 5. Final fallback - just use the symbol
+        return symbol;
+      };
+
       const resolvedQuote: StockQuote = {
         symbol,
-        name: (nameOverride || q?.name || POPULAR_STOCKS.find(s => s.symbol === symbol)?.name || symbol),
+        name: resolveName(),
         price: Number(q?.price ?? 0),
         change: Number(q?.change ?? 0),
         changePercent: Number(q?.changePercent ?? 0),
@@ -475,7 +530,23 @@ export function StockSearch() {
                     <StockIcon symbol={stock.symbol} name={stock.name} size={20} />
                     <div>
                       <div className="font-medium">{stock.symbol}</div>
-                      <div className="text-sm text-muted-foreground">{stock.name}</div>
+                      {(() => {
+                        // Show name only if it's different from symbol and provides additional info
+                        const name = stock.name?.trim();
+                        const symbol = stock.symbol?.trim();
+                        if (!name || !symbol) return null;
+                        
+                        // Don't show if name is exactly the symbol
+                        if (name === symbol) return null;
+                        
+                        // Don't show if name is just the symbol with some common suffixes
+                        const normalizedName = name.replace(/\s+(Inc\.?|Corp\.?|Company|Co\.?|Ltd\.?|Limited|Corporation|Incorporated)$/i, '').trim();
+                        if (normalizedName === symbol) return null;
+                        
+                        return (
+                          <div className="text-sm text-muted-foreground truncate max-w-[200px]">{name}</div>
+                        );
+                      })()}
                     </div>
                   </div>
                   {stock.exchange && (
@@ -498,7 +569,7 @@ export function StockSearch() {
             {POPULAR_STOCKS.map((stock) => (
               <button
                 key={stock.symbol}
-                onClick={() => selectStock(stock.symbol)}
+                onClick={() => selectStock(stock.symbol, stock.name)}
                 className="px-3 py-2 bg-muted hover:bg-accent/20 rounded-lg text-sm transition-colors hover:ring-1 ring-primary/30"
               >
                 {stock.symbol}

@@ -6,6 +6,7 @@ import { formatCurrency } from '@/lib/format';
 import { translate } from '@/lib/i18n';
 import { useCurrency } from '@/components/providers/CurrencyProvider';
 import { TrendingUp, TrendingDown, Clock, Globe, AlertCircle } from 'lucide-react';
+import { useIndicesData } from '@/hooks/useUnifiedMarketData';
 
 interface MarketIndex {
   symbol: string;
@@ -16,14 +17,37 @@ interface MarketIndex {
 }
 
 export function MarketOverview() {
-  const [indices, setIndices] = useState<MarketIndex[]>([]);
   const [isMarketOpen, setIsMarketOpen] = useState(false);
   const [marketStatus, setMarketStatus] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [timeUntilOpen, setTimeUntilOpen] = useState<string>('');
   const { preferences } = usePreferences();
   const { convertFromUSD } = useCurrency();
-  const [timeUntilOpen, setTimeUntilOpen] = useState<string>('');
+
+  // Use the unified market data hook
+  const { 
+    indices: rawIndices, 
+    loading, 
+    error, 
+    refresh, 
+    marketStatus: unifiedMarketStatus 
+  } = useIndicesData({
+    updateInterval: 30000,
+    enableRealTime: true
+  });
+
+  // Process indices data
+  const indices: MarketIndex[] = rawIndices.map((index: any) => ({
+    symbol: index.symbol || '',
+    name: index.name || '',
+    price: typeof index.price === 'number' ? index.price : null,
+    change: typeof index.change === 'number' ? index.change : null,
+    changePercent: typeof index.changePercent === 'number' ? index.changePercent : null,
+  })).filter(index => 
+    index.symbol && 
+    index.name && 
+    index.price !== null && 
+    !isNaN(index.price)
+  ).slice(0, 3); // Limit to 3 indices for the overview
 
   // Helper function to safely format numbers
   const safeToFixed = (value: number | null, digits: number = 2): string => {
@@ -102,65 +126,35 @@ export function MarketOverview() {
     return secondsLeftToday + wholeDaysInBetween * 24 * 3600 + openSeconds;
   };
 
+  // Update market status based on unified market status or local calculation
   useEffect(() => {
-    const load = async () => {
-      try {
-        setError(null);
-        const debug = process.env.NEXT_PUBLIC_API_DEBUG ? '&debug=1' : '';
-        const { apiFetch } = await import('@/lib/utils');
-        const res = await apiFetch(`/api/market/data?section=indices${debug}`);
-        
-        if (!res.ok) {
-          throw new Error(`API request failed: ${res.status}`);
-        }
-        
-        const data = await res.json();
-        
-        if (data.error) {
-          throw new Error(data.error);
-        }
-        
-        const all: MarketIndex[] = Array.isArray(data.indices) ? data.indices : [];
-        
-        // Filter out indices with no price data
-        const validIndices = all.filter(index => 
-          index.price !== null && 
-          !isNaN(index.price) && 
-          index.symbol && 
-          index.name
-        );
-        
-        if (validIndices.length === 0) {
-          setError('No valid market data available');
-          setIndices([]);
-        } else {
-          const shuffled = [...validIndices].sort(() => Math.random() - 0.5);
-          setIndices(shuffled.slice(0, 3));
-        }
-        
-      } catch (err) {
-        console.error('Market data fetch error:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load market data');
-        setIndices([]);
-      } finally {
+    const updateMarketStatus = () => {
+      let marketOpen = false;
+      
+      if (unifiedMarketStatus) {
+        marketOpen = unifiedMarketStatus.isOpen;
+      } else {
+        // Fallback to local calculation
         const ny = getNYTimeParts();
         const isWeekendNY = ny.weekdayIndex === 0 || ny.weekdayIndex === 6;
-        const isBusinessHoursNY = ny.hour >= 9 && ny.hour < 16; // 9am to 4pm New York time
-        const marketOpen = !isWeekendNY && isBusinessHoursNY;
-        setIsMarketOpen(marketOpen);
-        setMarketStatus(
-          marketOpen
-            ? translate(preferences.language, 'market.open', 'Market Open')
-            : translate(preferences.language, 'market.closed', 'Market Closed')
-        );
-        setLoading(false);
+        const isBusinessHoursNY = ny.hour >= 9 && ny.hour < 16;
+        marketOpen = !isWeekendNY && isBusinessHoursNY;
       }
+      
+      setIsMarketOpen(marketOpen);
+      setMarketStatus(
+        marketOpen
+          ? translate(preferences.language, 'market.open', 'Market Open')
+          : translate(preferences.language, 'market.closed', 'Market Closed')
+      );
     };
+
+    updateMarketStatus();
     
-    load();
-    const interval = setInterval(load, 30000);
+    // Update market status every minute
+    const interval = setInterval(updateMarketStatus, 60000);
     return () => clearInterval(interval);
-  }, [preferences.language]);
+  }, [preferences.language, unifiedMarketStatus]);
 
   // Countdown ticker for next open when market is closed
   useEffect(() => {
@@ -224,52 +218,68 @@ export function MarketOverview() {
   }
 
   return (
-    <div className="bg-card rounded-xl border border-border p-6 shadow-sm">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+    <div className="card-elevated card-interactive rounded-xl p-6">
+      {/* Enhanced Header with better visual hierarchy */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-3">
         <div className="flex items-center space-x-3">
-          <Globe className="w-5 h-5 text-primary" />
-          <h2 className="text-xl font-bold">{translate(preferences.language, 'market.overview', 'Market Overview')}</h2>
+          <div className="p-2 bg-primary/10 rounded-lg border border-primary/20">
+            <Globe className="w-5 h-5 text-primary" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text text-transparent">
+              {translate(preferences.language, 'market.overview', 'Market Overview')}
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {translate(preferences.language, 'market.subtitle', 'Real-time market indices')}
+            </p>
+          </div>
         </div>
         <div className="flex items-center space-x-2">
-          <div className={`w-2 h-2 rounded-full ${isMarketOpen ? 'bg-green-500' : 'bg-red-500'}`}></div>
-          <span className="text-sm text-muted-foreground flex items-center">
-            <Clock className="w-4 h-4 mr-1" />
-            {translate(
-              preferences.language,
-              isMarketOpen ? 'market.open' : 'market.closed',
-              isMarketOpen ? 'Market Open' : 'Market Closed'
-            )}
+          <div className={`w-2 h-2 rounded-full ${isMarketOpen ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+          <div className="text-right">
+            <span className="text-sm font-medium flex items-center">
+              <Clock className="w-4 h-4 mr-1" />
+              {translate(
+                preferences.language,
+                isMarketOpen ? 'market.open' : 'market.closed',
+                isMarketOpen ? 'Market Open' : 'Market Closed'
+              )}
+            </span>
             {!isMarketOpen && timeUntilOpen && (
-              <span className="ml-2 text-xs">
-                • {translate(preferences.language, 'market.opensIn', 'Opens in')} {timeUntilOpen}
+              <span className="text-xs text-muted-foreground">
+                {translate(preferences.language, 'market.opensIn', 'Opens in')} {timeUntilOpen}
               </span>
             )}
-          </span>
+          </div>
         </div>
       </div>
 
-      {/* Indices Grid */}
+      {/* Enhanced Indices Grid with better responsive behavior */}
       {indices.length === 0 ? (
-        <div className="flex items-center justify-center py-8">
+        <div className="flex items-center justify-center py-12">
           <div className="text-center">
             <AlertCircle className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
             <p className="text-muted-foreground">No market data available</p>
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {indices.map((index) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          {indices.map((index, i) => (
             <div
               key={index.symbol}
-              className="bg-background rounded-lg p-4 border border-border hover:shadow-md transition-shadow animate-flare"
+              className="bg-background/50 backdrop-blur-sm rounded-xl p-4 border border-border/50 hover:shadow-lg hover:border-primary/20 transition-all duration-300 group animate-fade-in"
+              style={{ animationDelay: `${i * 50}ms` }}
             >
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between mb-3">
                 <div>
-                  <h3 className="font-semibold text-sm">{index.name || index.symbol}</h3>
-                  <p className="text-xs text-muted-foreground">{index.symbol}</p>
+                  <h3 className="font-semibold text-sm group-hover:text-primary transition-colors">{index.name || index.symbol}</h3>
+                  <p className="text-xs text-muted-foreground font-mono">{index.symbol}</p>
                 </div>
-                <div className={`p-1 rounded ${isPositive(index.change) ? 'bg-green-100 dark:bg-green-900' : 'bg-red-100 dark:bg-red-900'}`}>
+                <div className={`p-2 rounded-lg transition-all duration-300 ${
+                  isPositive(index.change) 
+                    ? 'bg-green-100 dark:bg-green-900/50 group-hover:bg-green-200 dark:group-hover:bg-green-900/70' 
+                    : 'bg-red-100 dark:bg-red-900/50 group-hover:bg-red-200 dark:group-hover:bg-red-900/70'
+                }`}>
                   {isPositive(index.change) ? (
                     <TrendingUp className="w-4 h-4 text-green-600 dark:text-green-400" />
                   ) : (
@@ -278,8 +288,8 @@ export function MarketOverview() {
                 </div>
               </div>
               
-              <div className="space-y-1">
-                <p className="text-lg font-bold">
+              <div className="space-y-2">
+                <p className="text-lg font-bold tracking-tight">
                   {index.price !== null && !isNaN(index.price) ? (
                     formatCurrency(convertFromUSD(index.price), { 
                       locale: preferences.locale, 
@@ -290,11 +300,19 @@ export function MarketOverview() {
                     <span className="text-muted-foreground">--</span>
                   )}
                 </p>
-                <div className="flex items-center space-x-2">
-                  <span className={`text-sm font-medium ${isPositive(index.change) ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                  <span className={`text-xs font-semibold px-2 py-1 rounded-full w-fit ${
+                    isPositive(index.change) 
+                      ? 'text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/30' 
+                      : 'text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/30'
+                  }`}>
                     {getChangeSign(index.change)}{safeToFixed(index.change)}
                   </span>
-                  <span className={`text-sm ${isPositive(index.changePercent) ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                  <span className={`text-xs font-medium ${
+                    isPositive(index.changePercent) 
+                      ? 'text-green-600 dark:text-green-400' 
+                      : 'text-red-600 dark:text-red-400'
+                  }`}>
                     ({getChangeSign(index.changePercent)}{safeToFixed(index.changePercent)}%)
                   </span>
                 </div>

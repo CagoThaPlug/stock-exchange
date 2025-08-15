@@ -86,81 +86,118 @@ export default function Home() {
         
         <Header />
         
-        <main id="main-content" className="container mx-auto px-4 py-6 space-y-8 relative" role="main" aria-label="Main content">
+        <main id="main-content" className={`container mx-auto px-4 py-6 relative layout-${preferences.layout}`} role="main" aria-label="Main content" style={{ gap: 'var(--layout-gap)' }}>
           {/* Layout switching fade overlay */}
           {switchingLayout && (
             <div className="pointer-events-none absolute inset-0 z-10 bg-background/60 animate-fade-in" />
           )}
           <ComplianceNotice />
           
-          <div className={`transition-opacity duration-200 ${switchingLayout ? 'opacity-0' : 'opacity-100'}`}>
+          <div className={`transition-all duration-300 ease-in-out ${switchingLayout ? 'opacity-0 transform scale-[0.98]' : 'opacity-100 transform scale-100'}`}>
           {preferences.layout === 'classic' && (
-            <>
-              {/* Market Overview Section */}
-              <section className="market-overview">
+            <div className="space-y-8">
+              {/* Hero Section - Market Overview with enhanced spacing */}
+              <section className="market-overview animate-fade-in">
                 <MarketOverview />
               </section>
 
-              {/* Stock Search Section */}
-              <section className="stock-search">
+              {/* Primary Analysis Section - Stock Search with prominence */}
+              <section className="stock-search animate-fade-in" style={{ animationDelay: '100ms' }}>
                 <StockSearch />
               </section>
 
-              {/* Market Analysis Grid */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Market Heatmap - Takes 2 columns on large screens */}
-                <div className="lg:col-span-2">
-                  <MarketHeatmap />
+              {/* Interactive Market Analysis Grid - Responsive flow */}
+              <section className="market-analysis animate-fade-in" style={{ animationDelay: '200ms' }}>
+                <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
+                  {/* Market Heatmap - Premium placement */}
+                  <div className="xl:col-span-3 order-1">
+                    <MarketHeatmap />
+                  </div>
+                  
+                  {/* Trending Stocks - Companion panel */}
+                  <div className="xl:col-span-2 order-2">
+                    <TrendingStocks />
+                  </div>
                 </div>
-                
-                {/* Trending Stocks - Takes 1 column */}
-                <div>
-                  <TrendingStocks />
-                </div>
-              </div>
+              </section>
 
-              {/* News Feed Section */}
-              <section>
+              {/* News & Information Section */}
+              <section className="news-section animate-fade-in" style={{ animationDelay: '300ms' }}>
                 <NewsFeed />
               </section>
-              
-            </>
+            </div>
           )}
 
           {preferences.layout === 'compact' && (
-            <>
-              {/* Two-column compact grid with scroll-friendly cards */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="space-y-6">
-                  <MarketOverview />
-                  <TrendingStocks />
+            <div className="space-y-6">
+              {/* Efficient Two-Column Layout for Screen Real Estate */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+                {/* Primary Column - Essential Data */}
+                <div className="space-y-6 lg:col-span-1 xl:col-span-1">
+                  <div className="animate-fade-in">
+                    <MarketOverview />
+                  </div>
+                  <div className="animate-fade-in" style={{ animationDelay: '150ms' }}>
+                    <TrendingStocks />
+                  </div>
                 </div>
-                <div className="space-y-6">
-                  <StockSearch />
-                  <MarketHeatmap />
+                
+                {/* Secondary Column - Analysis Tools */}
+                <div className="space-y-6 lg:col-span-1 xl:col-span-2">
+                  <div className="animate-fade-in" style={{ animationDelay: '100ms' }}>
+                    <StockSearch />
+                  </div>
+                  <div className="animate-fade-in" style={{ animationDelay: '200ms' }}>
+                    <MarketHeatmap />
+                  </div>
                 </div>
               </div>
-              <NewsFeed />
-            </>
+              
+              {/* Full-width News Section */}
+              <div className="animate-fade-in" style={{ animationDelay: '250ms' }}>
+                <NewsFeed />
+              </div>
+            </div>
           )}
 
           {preferences.layout === 'analysis' && (
-            <>
-              {/* Analysis-first layout: big StockSearch + Heatmap, then movers and news */}
-              <section className="stock-search">
+            <div className="space-y-8">
+              {/* Analysis-First Approach - Stock Search Takes Center Stage */}
+              <section className="primary-analysis animate-fade-in">
                 <StockSearch />
               </section>
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2">
-                  <MarketHeatmap />
+              
+              {/* Advanced Market Visualization Grid */}
+              <section className="market-visualization animate-fade-in" style={{ animationDelay: '100ms' }}>
+                <div className="grid grid-cols-1 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+                  {/* Enhanced Heatmap - Prominent Display */}
+                  <div className="lg:col-span-3 xl:col-span-3 order-1">
+                    <MarketHeatmap />
+                  </div>
+                  
+                  {/* Market Movers - Side Panel */}
+                  <div className="lg:col-span-1 xl:col-span-2 order-2 space-y-6">
+                    <TrendingStocks />
+                    <div className="lg:block xl:hidden">
+                      <MarketOverview />
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <TrendingStocks />
+              </section>
+              
+              {/* Supporting Information Row */}
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                {/* Market Overview - Supporting role in analysis layout */}
+                <div className="xl:col-span-1 hidden xl:block animate-fade-in" style={{ animationDelay: '200ms' }}>
+                  <MarketOverview />
+                </div>
+                
+                {/* News Feed - Takes remaining space */}
+                <div className="xl:col-span-2 animate-fade-in" style={{ animationDelay: '250ms' }}>
+                  <NewsFeed />
                 </div>
               </div>
-              <MarketOverview />
-              <NewsFeed />
-            </>
+            </div>
           )}
           </div>
         </main>

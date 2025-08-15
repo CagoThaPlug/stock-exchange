@@ -391,19 +391,116 @@ interface MarketDataProvider {
         } catch (error) {
           console.error('Subscriber callback error:', error);
         }
-      });
+          });
+  }
+
+  startRealTimeUpdates() {
+    setInterval(async () => {
+      try {
+        const data = await this.getMarketHeatmapData();
+        this.notifySubscribers('heatmap', data);
+      } catch (error) {
+        console.error('Real-time update failed:', error);
+      }
+    }, 15000); // Update every 15 seconds
+  }
+
+  // Bulk operations support
+  async getBulkQuotes(symbols: string[]): Promise<Quote[]> {
+    return this.withFallback(
+      provider => provider.getBulkQuotes(symbols),
+      `bulk-quotes-${symbols.join(',').substring(0, 50)}`
+    );
+  }
+
+  // Enhanced cache management for unified API
+  getCachedData(key: string): any | null {
+    const cached = this.cache.get(key);
+    if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
+      return cached.data;
     }
-  
-    startRealTimeUpdates() {
-      setInterval(async () => {
-        try {
-          const data = await this.getMarketHeatmapData();
-          this.notifySubscribers('heatmap', data);
-        } catch (error) {
-          console.error('Real-time update failed:', error);
-        }
-      }, 15000); // Update every 15 seconds
+    return null;
+  }
+
+  setCachedData(key: string, data: any): void {
+    this.cache.set(key, { data, timestamp: Date.now() });
+  }
+
+  // Batch invalidation for related cache keys
+  invalidateCache(pattern?: string): void {
+    if (!pattern) {
+      this.cache.clear();
+      return;
+    }
+    
+    for (const key of this.cache.keys()) {
+      if (key.includes(pattern)) {
+        this.cache.delete(key);
+      }
     }
   }
-  
-  export const marketDataService = new MarketDataService();
+
+  // Subscribe to unified data updates
+  subscribeToUnified(callback: (data: any) => void): () => void {
+    return this.subscribe('unified', callback);
+  }
+
+  // Batch update for unified data
+  updateUnifiedData(data: any): void {
+    this.notifySubscribers('unified', data);
+  }
+
+  // Get aggregated market health
+  async getMarketHealth(): Promise<{
+    sentiment: 'bullish' | 'bearish' | 'neutral';
+    volatility: 'low' | 'medium' | 'high';
+    volume: 'low' | 'medium' | 'high';
+    sectors: { name: string; performance: number }[];
+  }> {
+    try {
+      const heatmapData = await this.getMarketHeatmapData();
+      const sectors = heatmapData.sectors || [];
+      
+      if (sectors.length === 0) {
+        return {
+          sentiment: 'neutral',
+          volatility: 'medium',
+          volume: 'medium',
+          sectors: []
+        };
+      }
+
+      // Calculate overall sentiment
+      const avgChange = sectors.reduce((sum, s) => sum + (s.change || 0), 0) / sectors.length;
+      const sentiment = avgChange > 1 ? 'bullish' : avgChange < -1 ? 'bearish' : 'neutral';
+
+      // Calculate volatility based on change spreads
+      const changes = sectors.map(s => Math.abs(s.change || 0));
+      const maxChange = Math.max(...changes);
+      const volatility = maxChange > 3 ? 'high' : maxChange > 1.5 ? 'medium' : 'low';
+
+      // Volume assessment (simplified)
+      const volume = 'medium'; // Could be enhanced with actual volume data
+
+      return {
+        sentiment,
+        volatility,
+        volume,
+        sectors: sectors.map(s => ({
+          name: s.name,
+          performance: s.change || 0
+        }))
+      };
+    } catch (error) {
+      console.error('Failed to get market health:', error);
+      return {
+        sentiment: 'neutral',
+        volatility: 'medium',
+        volume: 'medium',
+        sectors: []
+      };
+    }
+  }
+}
+
+export const marketDataService = new MarketDataService();

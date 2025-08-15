@@ -120,9 +120,9 @@ export function MarketHeatmap() {
     : 0;
 
   return (
-    <div className="bg-gradient-to-br from-card/95 to-card rounded-2xl border border-border/50 p-6 shadow-lg backdrop-blur-sm">
+    <div className="card-elevated card-interactive rounded-2xl p-6 overflow-hidden">
       {/* Enhanced Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-6">
         <div className="flex items-center space-x-4">
           <div className="p-2.5 bg-primary/10 rounded-xl border border-primary/20">
             <BarChart3 className="w-6 h-6 text-primary" />
@@ -176,7 +176,7 @@ export function MarketHeatmap() {
       </div>
 
       {/* Enhanced Responsive Layout with size factor */}
-      <div className="flex flex-wrap gap-4 mb-8">
+      <div className="flex flex-wrap gap-3 mb-6">
         {sectors.map((sector) => {
           const isSelected = selectedSector === sector.name;
           const isHovered = hoveredSector === sector.name;
@@ -192,8 +192,8 @@ export function MarketHeatmap() {
               className={`
                 ${getSectorBasis(sector.marketCap)}
                 group relative ${colorClasses} backdrop-blur-sm
-                rounded-2xl p-5 transition-all duration-300 hover:shadow-2xl hover:scale-[1.02]
-                flex flex-col justify-between overflow-hidden border-2 aspect-square
+                rounded-2xl p-4 transition-all duration-300 hover:shadow-2xl hover:scale-[1.02]
+                flex flex-col justify-between overflow-hidden border-2 min-h-[120px] max-h-[160px]
                 ${isSelected ? 'ring-4 ring-primary/30 ring-offset-2 ring-offset-background shadow-xl scale-[1.02]' : ''}
                 ${textColor} hover:border-opacity-60
               `}
@@ -232,8 +232,8 @@ export function MarketHeatmap() {
 
       {/* Enhanced Sector Details */}
       {selectedSector && (
-        <div className="bg-background/80 backdrop-blur-sm rounded-2xl p-6 border border-border/50 shadow-lg">
-          <div className="flex items-center justify-between mb-6">
+        <div className="bg-background/80 backdrop-blur-sm rounded-2xl p-4 border border-border/50 shadow-lg">
+          <div className="flex items-center justify-between mb-4">
             <div className="flex items-center space-x-3">
               <div className="w-3 h-3 rounded-full bg-primary animate-pulse" />
               <h3 className="text-xl font-bold">{selectedSector}</h3>
