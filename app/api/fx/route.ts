@@ -7,7 +7,7 @@ export async function GET(req: NextRequest) {
   const base = req.nextUrl.searchParams.get('base') || 'USD';
   try {
     const url = `https://api.exchangerate.host/latest?base=${encodeURIComponent(base)}`;
-    const res = await fetch(url, { cache: 'no-store' });
+    const res = await fetch(url);
     if (!res.ok) {
       const t = await res.text().catch(() => '');
       return NextResponse.json({ error: `FX upstream ${res.status}: ${t}` }, { status: 502 });

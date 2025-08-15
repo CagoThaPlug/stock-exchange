@@ -42,9 +42,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const res = await fetch(remoteUrl, {
-      // Avoid browser caching issues; we'll set our own cache headers on success
       cache: 'no-store',
-      // Some CDNs require a UA
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; BoltMarketData/1.0)' },
     });
 
@@ -57,7 +55,7 @@ export async function GET(req: NextRequest) {
       status: 200,
       headers: {
         'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=86400', // 1 day
+        'Cache-Control': 'public, max-age=86400',
       },
     });
   } catch {

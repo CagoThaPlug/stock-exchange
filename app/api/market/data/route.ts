@@ -15,29 +15,53 @@ export const runtime = 'edge';
 
 export async function GET(req: NextRequest) {
   const section = (req.nextUrl.searchParams.get('section') || 'indices').toLowerCase();
+  const debug = req.nextUrl.searchParams.get('debug') === '1' || req.nextUrl.searchParams.get('debug') === 'true';
 
   try {
     if (section === 'indices') {
       const indices = await fetchIndices();
-      return NextResponse.json({ indices });
+      return NextResponse.json(
+        debug ? withDebug(req, { indices }) : { indices },
+        { headers: debugHeaders(req) }
+      );
     }
 
     if (section === 'movers') {
       const type = (req.nextUrl.searchParams.get('type') || 'gainers') as 'gainers' | 'losers' | 'actives';
       const results = await fetchMovers(type);
-      return NextResponse.json({ results });
+      const body = { movers: results } as const;
+      return NextResponse.json(debug ? withDebug(req, body) : body, { headers: debugHeaders(req) });
     }
 
     if (section === 'search') {
       const q = req.nextUrl.searchParams.get('q') || '';
       const results = await searchSymbols(q);
-      return NextResponse.json({ results });
+      return NextResponse.json(debug ? withDebug(req, { results }) : { results }, { headers: debugHeaders(req) });
     }
 
     if (section === 'quote') {
       const symbol = req.nextUrl.searchParams.get('symbol') || '';
-      const quote = await fetchQuote(symbol);
-      return NextResponse.json({ quote });
+      let quote = await fetchQuote(symbol);
+      if (!quote) {
+        quote = {
+          symbol,
+          name: symbol,
+          price: 0,
+          change: 0,
+          changePercent: 0,
+          volume: 0,
+          marketCap: 0,
+        } as any;
+      }
+      return NextResponse.json(
+        debug ? withDebug(req, { quote }) : { quote },
+        {
+          headers: {
+            ...debugHeaders(req),
+            'Access-Control-Allow-Origin': '*',
+          },
+        }
+      );
     }
 
     if (section === 'chart') {
@@ -45,21 +69,46 @@ export async function GET(req: NextRequest) {
       const range = req.nextUrl.searchParams.get('range') || '1mo';
       const interval = req.nextUrl.searchParams.get('interval') || '1d';
       const chart = await fetchChart(symbol, range, interval);
-      return NextResponse.json({ chart });
+      return NextResponse.json(debug ? withDebug(req, { chart }) : { chart }, { headers: debugHeaders(req) });
     }
 
     // default
     const indices = await fetchIndices();
-    return NextResponse.json({ indices });
+    return NextResponse.json(debug ? withDebug(req, { indices }) : { indices }, { headers: debugHeaders(req) });
   } catch (e) {
-    // Return explicit errors so UI can show an error state
+    // Return explicit errors in body but keep 200 to avoid platform 502 HTML responses breaking fetch JSON parsing
     const message = String((e as Error).message || 'Upstream error');
-    if (section === 'movers') return NextResponse.json({ error: message }, { status: 502 });
-    if (section === 'search') return NextResponse.json({ error: message }, { status: 502 });
-    if (section === 'quote') return NextResponse.json({ error: message }, { status: 502 });
-    if (section === 'chart') return NextResponse.json({ error: message }, { status: 502 });
-    return NextResponse.json({ error: message }, { status: 502 });
+    const body = debug ? withDebug(req, { error: message }) : { error: message };
+    return NextResponse.json(body, { status: 200, headers: debugHeaders(req) });
   }
+}
+
+function debugHeaders(req: NextRequest): Record<string, string> {
+  const ray = req.headers.get('cf-ray') || '';
+  const colo = req.headers.get('cf-ray')?.split('-')[1] || '';
+  const country = req.headers.get('cf-ipcountry') || '';
+  return ray || colo || country
+    ? {
+        'X-Debug-CF-Ray': ray,
+        ...(colo ? { 'X-Debug-CF-Colo': colo } : {}),
+        ...(country ? { 'X-Debug-CF-Country': country } : {}),
+      }
+    : {};
+}
+
+function withDebug<T extends object>(req: NextRequest, data: T): T & { __debug: any } {
+  const ray = req.headers.get('cf-ray') || null;
+  const colo = (req.headers.get('cf-ray') || '').split('-')[1] || null;
+  const country = req.headers.get('cf-ipcountry') || null;
+  return {
+    ...data,
+    __debug: {
+      runtime: 'edge',
+      cfRay: ray,
+      cfColo: colo,
+      cfCountry: country,
+    },
+  };
 }
 
 

@@ -200,4 +200,3 @@ export function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
   );
 }
 
-

@@ -1,9 +1,3 @@
-import { NextRequest, NextResponse } from 'next/server';
-
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-export const runtime = 'edge';
-
 type YahooNews = {
   title?: string;
   link?: string;
@@ -60,9 +54,11 @@ const CATEGORY_TO_QUERIES: Record<string, string[]> = {
   ],
 };
 
-export async function GET(request: NextRequest) {
-  const category = request.nextUrl.searchParams.get('category') || 'all';
-  const limit = parseInt(request.nextUrl.searchParams.get('limit') || '12');
+export async function onRequestGet(context: { request: Request }) {
+  const { request } = context;
+  const url = new URL(request.url);
+  const category = url.searchParams.get('category') || 'all';
+  const limit = parseInt(url.searchParams.get('limit') || '12');
   const candidates = CATEGORY_TO_QUERIES[category] || CATEGORY_TO_QUERIES.all;
   const q = candidates[Math.floor(Math.random() * candidates.length)];
 
@@ -70,7 +66,6 @@ export async function GET(request: NextRequest) {
     const yahooArticles = await fetchYahooArticles(q, limit);
     const googleArticles = await fetchGoogleNewsArticles(q, limit);
 
-    // Merge, dedupe by URL/title, sort newest first, and slice to limit
     const merged = [...yahooArticles, ...googleArticles];
     const seenKeys = new Set<string>();
     const deduped = merged.filter((a) => {
@@ -86,9 +81,9 @@ export async function GET(request: NextRequest) {
     });
 
     const articles = deduped.slice(0, limit).map((a, idx) => ({ ...a, id: `${idx}-${a.title}` }));
-    return NextResponse.json({ articles, totalResults: articles.length });
+    return json({ articles, totalResults: articles.length });
   } catch (error) {
-    return NextResponse.json({ articles: [], totalResults: 0 }, { status: 200 });
+    return json({ articles: [], totalResults: 0 }, 200);
   }
 }
 
@@ -97,10 +92,10 @@ async function fetchYahooArticles(q: string, limit: number) {
     const url = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=0&newsCount=${limit}&enableFuzzyQuery=true`;
     const response = await fetch(url, {
       headers: {
-        'Accept': 'application/json, text/plain, */*',
+        Accept: 'application/json, text/plain, */*',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
         'Accept-Language': 'en-US,en;q=0.9',
-        'Referer': 'https://finance.yahoo.com/',
+        Referer: 'https://finance.yahoo.com/',
       },
     });
     if (!response.ok) return [] as any[];
@@ -170,7 +165,6 @@ function parseRssItems(xml: string): Array<{ title: string; link: string; pubDat
 
 function normalizeGoogleLink(link: string): string {
   try {
-    // Many Google News links contain a final url param
     const url = new URL(link);
     const real = url.searchParams.get('url');
     return real || link;
@@ -185,7 +179,7 @@ function inferSentiment(title: string, summary?: string): 'positive' | 'negative
     'beat', 'beats', 'above expectations', 'tops', 'surge', 'soar', 'soars', 'rally', 'jump', 'jumps', 'rise', 'rises', 'upgrade', 'upgraded', 'record', 'strong', 'growth', 'expands', 'accelerates', 'adds', 'raises', 'boosts', 'approved', 'wins', 'profit', 'outperform'
   ];
   const negativeKeywords = [
-    'miss', 'misses', 'below expectations', 'falls short', 'plunge', 'plunges', 'drop', 'drops', 'fall', 'falls', 'slump', 'sinks', 'downgrade', 'downgraded', 'cut', 'cuts', 'recall', 'ban', 'weak', 'slowdown', 'lawsuit', 'loss', 'warns', 'warning', 'underperform'
+    'miss', 'misses', 'below expectations', 'falls short', 'plunge', 'plunges', 'drop', 'drops', 'fall', 'falls', 'slump', 'sinks', 'downgrade', 'downgraded', 'cut', 'cuts', 'recall', 'ban', '弱', 'slowdown', 'lawsuit', 'loss', 'warns', 'warning', 'underperform'
   ];
 
   let score = 0;
@@ -223,3 +217,12 @@ function decodeHtml(input: string): string {
   });
   return s;
 }
+
+function json(data: unknown, status = 200, headers: Record<string, string> = {}): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json; charset=utf-8', ...headers },
+  });
+}
+
+

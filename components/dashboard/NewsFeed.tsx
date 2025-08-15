@@ -23,32 +23,109 @@ export function NewsFeed() {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const { preferences } = usePreferences();
 
+  const extractPlainText = (htmlLike: string): string => {
+    if (!htmlLike || typeof htmlLike !== 'string') return '';
+    try {
+      // Works in client runtime (this is a client component)
+      const container = document.createElement('div');
+      container.innerHTML = htmlLike;
+      const anchor = container.querySelector('a');
+      const text = (anchor?.textContent || container.textContent || '').replace(/\s+/g, ' ').trim();
+      return text;
+    } catch {
+      // Fallback: strip tags via regex and collapse whitespace
+      return htmlLike.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+  };
+
+  const getHostname = (url: string): string => {
+    try {
+      const u = new URL(url);
+      return u.hostname.replace(/^www\./, '');
+    } catch {
+      return '';
+    }
+  };
+
+  const stripDomainFromText = (text: string, url: string): string => {
+    if (!text) return '';
+    const host = getHostname(url);
+    if (!host) return text;
+    const escaped = host.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return text.replace(new RegExp(`\\b(?:www\\.)?${escaped}\\b`, 'gi'), '').replace(/\s+/g, ' ').trim();
+  };
+
+  const normalizePublishedAt = (raw: any): string => {
+    if (!raw) return '';
+    try {
+      if (typeof raw === 'number') {
+        // seconds vs ms
+        const ms = raw < 10_000_000_000 ? raw * 1000 : raw;
+        const d = new Date(ms);
+        return isNaN(d.getTime()) ? '' : d.toISOString();
+      }
+      if (typeof raw === 'string') {
+        // If string is numeric epoch
+        const num = Number(raw);
+        if (Number.isFinite(num) && raw.trim() !== '') {
+          const ms = num < 10_000_000_000 ? num * 1000 : num;
+          const d = new Date(ms);
+          if (!isNaN(d.getTime())) return d.toISOString();
+        }
+        // Treat timestamps missing a timezone as UTC (e.g., 2025-08-12T15:31:00)
+        const looksLikeNoTz = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(raw.trim());
+        const d = new Date(looksLikeNoTz ? `${raw.trim()}Z` : raw);
+        return isNaN(d.getTime()) ? '' : d.toISOString();
+      }
+      return '';
+    } catch {
+      return '';
+    }
+  };
+
   useEffect(() => {
     const controller = new AbortController();
     const load = async () => {
       try {
         setLoading(true);
-        const res = await fetch(`/api/news?category=${encodeURIComponent(selectedCategory)}`, { cache: 'no-store', signal: controller.signal });
+        const { apiFetch } = await import('@/lib/utils');
+        const res = await apiFetch(`/api/news?category=${encodeURIComponent(selectedCategory)}`, { signal: controller.signal });
         const data = await res.json();
         const items: any[] = Array.isArray(data.articles) ? data.articles : [];
-        const mapped: NewsItem[] = items.map((a: any, idx: number) => ({
-          id: a.id || String(idx),
-          title: a.title || 'Untitled',
-          summary: a.summary || a.description || '',
-          source: a.source?.name || a.source || 'News',
-          publishedAt: a.publishedAt || new Date().toISOString(),
-          url: a.url || '#',
-          sentiment: a.sentiment || 'neutral',
-          relevantStocks: a.relevantStocks || a.relevantSymbols || [],
-          category: selectedCategory === 'all' ? 'General' : selectedCategory,
-        }));
+        const mapped: NewsItem[] = items.map((a: any, idx: number) => {
+          const url = a.url || '#';
+          const title = extractPlainText(a.title || a.headline || 'Untitled');
+          let summary = extractPlainText(
+            a.summary || a.description || a.content || a.snippet || a.contentSnippet || ''
+          );
+          // Remove embedded domain/source remnants from summary
+          summary = stripDomainFromText(summary, url);
+          // Drop summary if it just repeats title or looks like a link-only blurb
+          if (!summary || summary === title || /https?:\/\//i.test(summary) || summary.length < 15) {
+            summary = '';
+          }
+          const source = extractPlainText(a.source?.name || a.source || getHostname(url) || 'News');
+          const publishedAt = normalizePublishedAt(a.publishedAt || a.pubDate || a.providerPublishTime || '');
+          return {
+            id: a.id || String(idx),
+            title,
+            summary,
+            source,
+            publishedAt,
+            url,
+            sentiment: a.sentiment || 'neutral',
+            relevantStocks: a.relevantStocks || a.relevantSymbols || [],
+            category: selectedCategory === 'all' ? 'General' : selectedCategory,
+          } as NewsItem;
+        });
         if (preferences.autoTranslateNews && preferences.language !== 'en') {
           const translated = await Promise.all(
             mapped.slice(0, 12).map(async (n) => {
               try {
+                const { apiFetch } = await import('@/lib/utils');
                 const [tTitleRes, tSumRes] = await Promise.all([
-                  fetch('/api/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: n.title, targetLang: preferences.language }) }),
-                  n.summary ? fetch('/api/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: n.summary, targetLang: preferences.language }) }) : Promise.resolve(null),
+                  apiFetch('/api/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: n.title, targetLang: preferences.language }) }),
+                  n.summary ? apiFetch('/api/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: n.summary, targetLang: preferences.language }) }) : Promise.resolve(null),
                 ]);
                 const tTitleJson = await tTitleRes?.json();
                 const tSumJson = n.summary ? await tSumRes?.json() : null;
@@ -102,18 +179,34 @@ export function NewsFeed() {
   };
 
   const formatTimeAgo = (dateString: string) => {
+    if (!dateString) return '';
     const date = new Date(dateString);
+    if (isNaN(date.getTime())) return '';
     const now = new Date();
-    const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
-    
-    if (diffInHours < 1) return translate(preferences.language, 'time.justNow', 'Just now');
-    if (diffInHours < 24) return translate(preferences.language, 'time.hoursAgo', `${diffInHours}h ago`).replace('{h}', String(diffInHours));
-    const d = Math.floor(diffInHours / 24);
-    return translate(preferences.language, 'time.daysAgo', `${d}d ago`).replace('{d}', String(d));
+    const diffMs = now.getTime() - date.getTime();
+    if (diffMs < 60_000) return translate(preferences.language, 'time.justNow', 'Just now');
+    const diffMin = Math.floor(diffMs / 60_000);
+    if (diffMin < 60) return translate(preferences.language, 'time.minutesAgo', `${diffMin}m ago`).replace('{m}', String(diffMin));
+    const diffHours = Math.floor(diffMin / 60);
+    if (diffHours < 24) return translate(preferences.language, 'time.hoursAgo', `${diffHours}h ago`).replace('{h}', String(diffHours));
+    const diffDays = Math.floor(diffHours / 24);
+    const rel = translate(preferences.language, 'time.daysAgo', `${diffDays}d ago`).replace('{d}', String(diffDays));
+    // If date is older than ~7 days, prefer absolute date for clarity
+    if (diffDays > 7) {
+      try {
+        const abs = new Intl.DateTimeFormat(preferences.locale || 'en-US', {
+          year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit'
+        } as any).format(date);
+        return abs;
+      } catch {
+        return rel;
+      }
+    }
+    return rel;
   };
 
   return (
-    <div className="bg-card rounded-xl border border-border p-6 shadow-sm">
+    <div className="bg-card rounded-xl border border-border p-6 shadow-sm mt-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center space-x-3">
@@ -193,9 +286,11 @@ export function NewsFeed() {
                 {item.title}
               </a>
               
-              <p className="text-muted-foreground text-sm mb-3 leading-relaxed">
-                {item.summary}
-              </p>
+              {item.summary && (
+                <p className="text-muted-foreground text-sm mb-3 leading-relaxed">
+                  {item.summary}
+                </p>
+              )}
 
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-4">

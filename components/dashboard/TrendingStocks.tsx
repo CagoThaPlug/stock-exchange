@@ -8,6 +8,7 @@ import { usePreferences } from '@/components/providers/PreferencesProvider';
 import { formatCurrency } from '@/lib/format';
 import { translate } from '@/lib/i18n';
 import { useCurrency } from '@/components/providers/CurrencyProvider';
+import { useMoversData } from '@/hooks/useUnifiedMarketData';
 
 interface TrendingStock {
   symbol: string;
@@ -21,37 +22,53 @@ interface TrendingStock {
 
 export function TrendingStocks() {
   const [activeTab, setActiveTab] = useState<'gainers' | 'losers' | 'active'>('gainers');
-  const [stocks, setStocks] = useState<TrendingStock[]>([]);
-  const [loading, setLoading] = useState(true);
   const { requestSelection } = useStockSelection();
   const { preferences } = usePreferences();
   const { convertFromUSD } = useCurrency();
 
-  useEffect(() => {
-    let abort = false;
-    const load = async () => {
-      try {
-        setLoading(true);
-        const [g, l, a] = await Promise.all([
-          fetch('/api/market/data?section=movers&type=gainers', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ results: [] })),
-          fetch('/api/market/data?section=movers&type=losers', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ results: [] })),
-          fetch('/api/market/data?section=movers&type=actives', { cache: 'no-store' }).then(r => r.json()).catch(() => ({ results: [] })),
-        ]);
-        if (abort) return;
-        const mapped: TrendingStock[] = [
-          ...(g.results || []).slice(0, 8).map((q: any) => ({ symbol: q.symbol, name: q.name, price: q.price, change: q.change, changePercent: q.changePercent, volume: q.volume, category: 'gainers' as const })),
-          ...(l.results || []).slice(0, 8).map((q: any) => ({ symbol: q.symbol, name: q.name, price: q.price, change: q.change, changePercent: q.changePercent, volume: q.volume, category: 'losers' as const })),
-          ...(a.results || []).slice(0, 8).map((q: any) => ({ symbol: q.symbol, name: q.name, price: q.price, change: q.change, changePercent: q.changePercent, volume: q.volume, category: 'active' as const })),
-        ];
-        setStocks(mapped);
-      } finally {
-        if (!abort) setLoading(false);
-      }
-    };
-    load();
-    const interval = setInterval(load, 60000);
-    return () => { abort = true; clearInterval(interval); };
-  }, []);
+  // Use the unified market data hook
+  const { 
+    gainers, 
+    losers, 
+    actives, 
+    loading, 
+    error, 
+    refresh 
+  } = useMoversData({
+    updateInterval: 30000,
+    enableRealTime: true
+  });
+
+  // Combine all movers into a single array with categories
+  const stocks: TrendingStock[] = [
+    ...gainers.slice(0, 8).map((q: any) => ({ 
+      symbol: q.symbol, 
+      name: q.name, 
+      price: q.price, 
+      change: q.change, 
+      changePercent: q.changePercent, 
+      volume: q.volume, 
+      category: 'gainers' as const 
+    })),
+    ...losers.slice(0, 8).map((q: any) => ({ 
+      symbol: q.symbol, 
+      name: q.name, 
+      price: q.price, 
+      change: q.change, 
+      changePercent: q.changePercent, 
+      volume: q.volume, 
+      category: 'losers' as const 
+    })),
+    ...actives.slice(0, 8).map((q: any) => ({ 
+      symbol: q.symbol, 
+      name: q.name, 
+      price: q.price, 
+      change: q.change, 
+      changePercent: q.changePercent, 
+      volume: q.volume, 
+      category: 'active' as const 
+    })),
+  ];
 
   const filteredStocks = stocks
     .filter(stock => stock.category === activeTab)
@@ -64,11 +81,20 @@ export function TrendingStocks() {
   ];
 
   return (
-    <div className="bg-card rounded-xl border border-border p-6 shadow-sm">
-      {/* Header */}
+    <div className="card-elevated card-interactive rounded-xl p-6">
+      {/* Enhanced Header */}
       <div className="flex items-center space-x-3 mb-6">
-        <Flame className="w-5 h-5 text-primary" />
-        <h2 className="text-xl font-bold">{translate(preferences.language, 'market.movers', 'Market Movers')}</h2>
+        <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg border border-orange-200 dark:border-orange-800">
+          <Flame className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+        </div>
+        <div>
+          <h2 className="text-xl font-bold bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text text-transparent">
+            {translate(preferences.language, 'market.movers', 'Market Movers')}
+          </h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {translate(preferences.language, 'movers.subtitle', 'Top performing stocks')}
+          </p>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -113,40 +139,55 @@ export function TrendingStocks() {
         </div>
       )}
 
-      {/* Stocks List */}
-      {!loading && (
-        <div className="space-y-2">
+      {/* No Data State */}
+      {!loading && filteredStocks.length === 0 && (
+        <div className="text-center py-8">
+          <p className="text-muted-foreground">No market movers data available</p>
+        </div>
+      )}
+
+      {/* Enhanced Stocks List */}
+      {!loading && filteredStocks.length > 0 && (
+        <div className="space-y-3">
           {filteredStocks.map((stock, index) => (
             <button
               key={stock.symbol}
               onClick={() => requestSelection(stock.symbol, stock.name)}
-              className="w-full text-left flex items-center justify-between p-3 hover:bg-accent/20 rounded-lg transition-colors group hover:ring-1 ring-primary/30"
+              className="w-full text-left flex items-center justify-between p-4 hover:bg-accent/10 hover:border-primary/20 rounded-xl transition-all duration-300 group border border-transparent hover:shadow-md animate-fade-in"
+              style={{ animationDelay: `${index * 50}ms` }}
             >
               {/* Stock Info */}
               <div className="flex items-center space-x-3">
-                <StockIcon symbol={stock.symbol} name={stock.name} size={32} />
+                <div className="relative">
+                  <StockIcon symbol={stock.symbol} name={stock.name} size={36} variant="remote" />
+                  <div className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-white dark:border-card ${
+                    stock.change >= 0 ? 'bg-green-500' : 'bg-red-500'
+                  }`} />
+                </div>
                 <div>
-                  <p className="font-semibold text-sm">{stock.symbol}</p>
-                  <p className="text-xs text-muted-foreground truncate max-w-[120px]">
+                  <p className="font-bold text-sm group-hover:text-primary transition-colors">{stock.symbol}</p>
+                  <p className="text-xs text-muted-foreground truncate max-w-[140px]">
                     {stock.name}
                   </p>
                 </div>
               </div>
 
-              {/* Price and Change */}
-              <div className="text-right">
-                <p className="font-semibold text-sm">
+              {/* Enhanced Price and Change Display */}
+              <div className="text-right space-y-1">
+                <p className="font-bold text-sm">
                   {formatCurrency(convertFromUSD(stock.price), { locale: preferences.locale, currency: preferences.currency })}
                 </p>
-                <div className="flex items-center space-x-1">
-                  <span className={`text-xs font-medium ${
-                    stock.change >= 0 ? 'text-green-600' : 'text-red-600'
+                <div className="flex items-center justify-end space-x-2">
+                  <span className={`text-xs font-bold px-2 py-1 rounded-full ${
+                    stock.change >= 0 
+                      ? 'text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/30' 
+                      : 'text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/30'
                   }`}>
                     {stock.change >= 0 ? '+' : ''}{stock.changePercent.toFixed(1)}%
                   </span>
                   {activeTab === 'active' && (
-                    <span className="text-xs text-muted-foreground">
-                      Vol: {(stock.volume / 1000000).toFixed(0)}M
+                    <span className="text-xs text-muted-foreground font-mono">
+                      {(stock.volume / 1000000).toFixed(0)}M
                     </span>
                   )}
                 </div>
@@ -157,10 +198,10 @@ export function TrendingStocks() {
       )}
 
       {/* Footer */}
-        <div className="mt-4 pt-4 border-t border-border">
-          <p className="text-xs text-muted-foreground text-center">
-            {translate(preferences.language, 'footer.refreshNote', 'Data refreshed every 15 minutes • Click stocks to view detailed analysis')}
-          </p>
+      <div className="mt-4 pt-4 border-t border-border">
+        <p className="text-xs text-muted-foreground text-center">
+          {translate(preferences.language, 'footer.refreshNote', 'Data refreshed every 15 minutes • Click stocks to view detailed analysis')}
+        </p>
       </div>
     </div>
   );

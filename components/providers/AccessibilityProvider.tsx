@@ -36,7 +36,6 @@ export function AccessibilityProvider({ children }: { children: ReactNode }) {
         const parsed = JSON.parse(saved);
         setSettings({ ...defaultSettings, ...parsed });
       } catch (error) {
-        console.warn('Failed to parse accessibility settings:', error);
       }
     }
 
