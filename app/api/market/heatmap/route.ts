@@ -24,44 +24,90 @@ type Quote = {
 
 export async function GET(req: NextRequest) {
   try {
+    const debug = req.nextUrl.searchParams.get('debug') === '1' || req.nextUrl.searchParams.get('debug') === 'true';
+    
+    if (debug) {
+      console.log('🔍 Heatmap API called with debug mode');
+      console.log('⏰ Request timestamp:', new Date().toISOString());
+    }
+
     // Flatten all symbols and fetch in one request
     const allSymbols = Array.from(new Set(Object.values(SECTOR_SYMBOLS).flat()));
+    
+    if (debug) {
+      console.log('📋 All symbols to fetch:', allSymbols);
+      console.log('📊 Total symbols:', allSymbols.length);
+    }
+    
     let quotes: any[] = [];
     try {
       const res = await yahooFinance.quote(allSymbols);
       quotes = Array.isArray(res) ? res : [res];
-    } catch {
+      
+      if (debug) {
+        console.log('✅ Yahoo Finance bulk quote response received');
+        console.log('📈 Quotes received:', quotes.length);
+        console.log('🔢 Quote symbols:', quotes.map(q => q?.symbol).filter(Boolean));
+        
+        // Check for missing symbols
+        const receivedSymbols = new Set(quotes.map(q => q?.symbol).filter(Boolean));
+        const missingSymbols = allSymbols.filter(s => !receivedSymbols.has(s));
+        if (missingSymbols.length > 0) {
+          console.log('❌ Missing symbols from bulk fetch:', missingSymbols);
+        }
+      }
+    } catch (error) {
+      if (debug) {
+        console.log('❌ Yahoo Finance bulk quote failed:', error);
+      }
       quotes = [];
     }
     const symbolToQuote = new Map<string, Quote>();
     for (const q of quotes) if (q?.symbol) symbolToQuote.set(q.symbol, q);
 
     // Enhanced robust change percent calculation with multiple fallback methods
-    const deriveChangePctFromQuote = (q: Quote): number => {
+    const deriveChangePctFromQuote = (q: Quote, debugEnabled = false): number => {
+      const symbol = (q as any)?.symbol;
+      
       // Try regularMarketChangePercent first (most reliable when present)
       const pct = Number((q as any)?.regularMarketChangePercent);
-      if (Number.isFinite(pct) && Math.abs(pct) > 0.001) return pct;
+      if (Number.isFinite(pct) && Math.abs(pct) > 0.001) {
+        if (debugEnabled) console.log(`✅ ${symbol}: Using regularMarketChangePercent: ${pct}%`);
+        return pct;
+      }
       
       // Try alternative percent fields
       const postPct = Number((q as any)?.postMarketChangePercent);
-      if (Number.isFinite(postPct) && Math.abs(postPct) > 0.001) return postPct;
+      if (Number.isFinite(postPct) && Math.abs(postPct) > 0.001) {
+        if (debugEnabled) console.log(`📈 ${symbol}: Using postMarketChangePercent: ${postPct}%`);
+        return postPct;
+      }
       
       const prePct = Number((q as any)?.preMarketChangePercent);
-      if (Number.isFinite(prePct) && Math.abs(prePct) > 0.001) return prePct;
+      if (Number.isFinite(prePct) && Math.abs(prePct) > 0.001) {
+        if (debugEnabled) console.log(`🌅 ${symbol}: Using preMarketChangePercent: ${prePct}%`);
+        return prePct;
+      }
       
       // Calculate from change and previous close
       const change = Number((q as any)?.regularMarketChange);
       const prevClose = Number((q as any)?.regularMarketPreviousClose);
       if (Number.isFinite(change) && Number.isFinite(prevClose) && Math.abs(prevClose) > 0.001) {
         const calcPct = (change / prevClose) * 100;
-        if (Number.isFinite(calcPct) && Math.abs(calcPct) > 0.001) return calcPct;
+        if (Number.isFinite(calcPct) && Math.abs(calcPct) > 0.001) {
+          if (debugEnabled) console.log(`🧮 ${symbol}: Calculated from change/prevClose: ${calcPct}% (${change}/${prevClose})`);
+          return calcPct;
+        }
       }
       
       // Calculate from current price and previous close
       const price = Number((q as any)?.regularMarketPrice || (q as any)?.price);
       if (Number.isFinite(price) && Number.isFinite(prevClose) && Math.abs(prevClose) > 0.001) {
         const calcPct = ((price - prevClose) / prevClose) * 100;
-        if (Number.isFinite(calcPct) && Math.abs(calcPct) > 0.001) return calcPct;
+        if (Number.isFinite(calcPct) && Math.abs(calcPct) > 0.001) {
+          if (debugEnabled) console.log(`💰 ${symbol}: Calculated from price/prevClose: ${calcPct}% (${price}/${prevClose})`);
+          return calcPct;
+        }
       }
       
       // Try bid/ask spread calculation as last resort
@@ -70,7 +116,20 @@ export async function GET(req: NextRequest) {
       if (Number.isFinite(bid) && Number.isFinite(ask) && Number.isFinite(prevClose) && Math.abs(prevClose) > 0.001) {
         const midPrice = (bid + ask) / 2;
         const calcPct = ((midPrice - prevClose) / prevClose) * 100;
-        if (Number.isFinite(calcPct) && Math.abs(calcPct) > 0.001) return calcPct;
+        if (Number.isFinite(calcPct) && Math.abs(calcPct) > 0.001) {
+          if (debugEnabled) console.log(`🎯 ${symbol}: Calculated from bid/ask spread: ${calcPct}% (${midPrice}/${prevClose})`);
+          return calcPct;
+        }
+      }
+      
+      // Log the failed case
+      if (debugEnabled) {
+        console.log(`❌ ${symbol}: No valid change calculation found`);
+        console.log(`   - regularMarketChangePercent: ${(q as any)?.regularMarketChangePercent}`);
+        console.log(`   - regularMarketChange: ${(q as any)?.regularMarketChange}`);
+        console.log(`   - regularMarketPreviousClose: ${(q as any)?.regularMarketPreviousClose}`);
+        console.log(`   - regularMarketPrice: ${(q as any)?.regularMarketPrice}`);
+        console.log(`   - bid: ${(q as any)?.bid}, ask: ${(q as any)?.ask}`);
       }
       
       // Return original percent if it exists, even if small/zero
@@ -89,9 +148,23 @@ export async function GET(req: NextRequest) {
 
     // Build sector aggregates (primary path)
     let sectors = Object.entries(SECTOR_SYMBOLS).map(([name, symbols]) => {
+      if (debug) {
+        console.log(`\n🏢 Processing sector: ${name}`);
+        console.log(`📋 Sector symbols: ${symbols.join(', ')}`);
+      }
+      
       const stocks = symbols
         .map((s) => symbolToQuote.get(s))
         .filter(Boolean) as Quote[];
+
+      if (debug) {
+        console.log(`📊 Found quotes for ${stocks.length}/${symbols.length} stocks`);
+        const foundSymbols = stocks.map(s => (s as any)?.symbol).filter(Boolean);
+        const missingSymbols = symbols.filter(s => !foundSymbols.includes(s));
+        if (missingSymbols.length > 0) {
+          console.log(`❌ Missing quotes: ${missingSymbols.join(', ')}`);
+        }
+      }
 
       let totalCap = stocks.reduce((acc, q) => acc + Number((q as any).marketCap || 0), 0);
       // Weighted average by marketCap if available, otherwise simple average
@@ -99,14 +172,16 @@ export async function GET(req: NextRequest) {
       if (stocks.length) {
         if (totalCap <= 0) {
           // If market caps are missing due to quote block, approximate using equal weights
-          avgPct = stocks.reduce((acc, q) => acc + deriveChangePctFromQuote(q), 0) / stocks.length;
+          avgPct = stocks.reduce((acc, q) => acc + deriveChangePctFromQuote(q, debug), 0) / stocks.length;
           totalCap = stocks.length * 1_000_000_000; // approximate to size tiles
+          if (debug) console.log(`💰 No market caps found, using equal weights. Average: ${avgPct.toFixed(2)}%`);
         } else {
           avgPct = stocks.reduce((acc, q) => {
             const cap = Number((q as any).marketCap || 0);
-            const pct = deriveChangePctFromQuote(q);
+            const pct = deriveChangePctFromQuote(q, debug);
             return acc + (cap / totalCap) * pct;
           }, 0);
+          if (debug) console.log(`💰 Market cap weighted average: ${avgPct.toFixed(2)}%`);
         }
       }
 
@@ -115,15 +190,23 @@ export async function GET(req: NextRequest) {
       const subset = pickRandom(stocks, 8);
       const topQuotes = subset
         .slice() // shallow copy
-        .sort((a, b) => Math.abs(deriveChangePctFromQuote(b)) - Math.abs(deriveChangePctFromQuote(a)))
+        .sort((a, b) => Math.abs(deriveChangePctFromQuote(b, debug)) - Math.abs(deriveChangePctFromQuote(a, debug)))
         .slice(0, 4);
-      const top = topQuotes.map((q) => ({ symbol: (q as any).symbol, change: deriveChangePctFromQuote(q) }));
+      const top = topQuotes.map((q) => ({ symbol: (q as any).symbol, change: deriveChangePctFromQuote(q, debug) }));
+
+      if (debug) {
+        console.log(`🎯 Top movers for ${name}:`, top.map(s => `${s.symbol}: ${s.change.toFixed(2)}%`).join(', '));
+      }
 
       // Align sector tile percent with what is displayed: sum of the 4 shown stocks
       let displaySum = 0;
       if (topQuotes.length) {
         // Sum raw percent changes (not an average)
-        displaySum = topQuotes.reduce((acc, q) => acc + deriveChangePctFromQuote(q), 0);
+        displaySum = topQuotes.reduce((acc, q) => acc + deriveChangePctFromQuote(q, debug), 0);
+      }
+
+      if (debug) {
+        console.log(`📈 ${name} final change: ${displaySum.toFixed(2)}%`);
       }
 
       return {
@@ -182,19 +265,38 @@ export async function GET(req: NextRequest) {
           !Number.isFinite(stock.change) || Math.abs(stock.change) < 0.001
         );
         
+        if (debug && problematicStocks.length > 0) {
+          console.log(`\n🔄 Retrying stocks in ${sector.name}:`, problematicStocks.map(s => s.symbol).join(', '));
+        }
+        
         if (problematicStocks.length === 0) return sector;
         
         // Retry up to 3 stocks per sector to avoid excessive API calls
         const stocksToRetry = problematicStocks.slice(0, 3);
         const retryResults = await Promise.allSettled(
-          stocksToRetry.map((stock) => retryStockWithTimeout(stock.symbol))
+          stocksToRetry.map((stock) => {
+            if (debug) console.log(`🔍 Retrying individual quote for ${stock.symbol}`);
+            return retryStockWithTimeout(stock.symbol);
+          })
         );
+        
+        if (debug) {
+          retryResults.forEach((result, index) => {
+            const symbol = stocksToRetry[index].symbol;
+            if (result.status === 'fulfilled') {
+              console.log(`✅ ${symbol} retry succeeded: ${result.value.toFixed(2)}%`);
+            } else {
+              console.log(`❌ ${symbol} retry failed:`, result.reason);
+            }
+          });
+        }
         
         const updatedStocks = sector.stocks.map((stock) => {
           const retryIndex = stocksToRetry.findIndex((s) => s.symbol === stock.symbol);
           if (retryIndex >= 0) {
             const result = retryResults[retryIndex];
             if (result.status === 'fulfilled' && Math.abs(result.value) > 0.001) {
+              if (debug) console.log(`🔄 Updated ${stock.symbol}: ${stock.change.toFixed(2)}% → ${result.value.toFixed(2)}%`);
               return { ...stock, change: result.value };
             }
           }
@@ -203,6 +305,10 @@ export async function GET(req: NextRequest) {
         
         // Recompute sector change with updated stock data
         const sectorChange = updatedStocks.reduce((acc, stock) => acc + (Number.isFinite(stock.change) ? stock.change : 0), 0);
+        
+        if (debug) {
+          console.log(`📊 ${sector.name} updated change: ${sector.change.toFixed(2)}% → ${sectorChange.toFixed(2)}%`);
+        }
         
         return { ...sector, stocks: updatedStocks, change: sectorChange };
       })
@@ -317,7 +423,16 @@ export async function GET(req: NextRequest) {
       sectors = updated;
     }
 
-    const debug = req.nextUrl.searchParams.get('debug') === '1' || req.nextUrl.searchParams.get('debug') === 'true';
+    if (debug) {
+      console.log('\n📋 Final sector summary:');
+      sectors.forEach(sector => {
+        console.log(`${sector.name}: ${sector.change.toFixed(2)}% (${sector.stocks.length} stocks)`);
+        sector.stocks.forEach(stock => {
+          console.log(`  - ${stock.symbol}: ${stock.change.toFixed(2)}%`);
+        });
+      });
+    }
+
     return NextResponse.json(
       debug ? withDebug(req, { sectors }) : { sectors },
       { headers: debugHeaders(req) }
