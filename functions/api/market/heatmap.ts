@@ -19,9 +19,37 @@ type Quote = {
 
 export async function onRequestGet(context: { request: Request }) {
   const { request } = context;
+  
+  // Cloudflare Pages timeout wrapper (20 second limit)
+  const timeoutWrapper = async <T>(promise: Promise<T>, timeoutMs = 18000): Promise<T> => {
+    return Promise.race([
+      promise,
+      new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Cloudflare function timeout')), timeoutMs)
+      )
+    ]);
+  };
+
   try {
     const debug = new URL(request.url).searchParams.get('debug') === '1' || new URL(request.url).searchParams.get('debug') === 'true';
     
+    return await timeoutWrapper(executeHeatmapLogic(request, debug));
+  } catch (e) {
+    const body: any = { error: String((e as Error).message), sectors: [] };
+    return json(body, 200, debugHeaders(request));
+  }
+}
+
+async function executeHeatmapLogic(request: Request, debug: boolean) {
+  const startTime = Date.now();
+  const maxExecutionTime = 15000; // 15 seconds max
+  
+  const checkTimeRemaining = () => {
+    const elapsed = Date.now() - startTime;
+    return elapsed < maxExecutionTime;
+  };
+  
+  try {
     if (debug) {
       console.log('🔍 Heatmap API called with debug mode');
       console.log('⏰ Request timestamp:', new Date().toISOString());
@@ -257,7 +285,7 @@ export async function onRequestGet(context: { request: Request }) {
       };
     });
 
-    // Emergency individual stock fetch for sectors with all-zero data
+    // Emergency individual stock fetch for sectors with all-zero data (Cloudflare optimized)
     const emergencyFetch = async () => {
       const zeroSectors = sectors.filter(s => Math.abs(s.change) < 0.001);
       if (zeroSectors.length === 0) return sectors;
@@ -266,18 +294,43 @@ export async function onRequestGet(context: { request: Request }) {
         console.log(`\n🚨 Emergency individual fetch for ${zeroSectors.length} zero sectors:`, zeroSectors.map(s => s.name).join(', '));
       }
       
-      const updatedSectors = await Promise.all(
-        sectors.map(async (sector) => {
-          if (Math.abs(sector.change) > 0.001) return sector; // Skip sectors with data
-          
-          const sectorSymbols = SECTOR_SYMBOLS[sector.name] || [];
-          if (debug) console.log(`🔍 Individual fetch for ${sector.name}: ${sectorSymbols.join(', ')}`);
-          
-          // Fetch each stock individually
-          const individualResults = await Promise.allSettled(
-            sectorSymbols.map(async (symbol) => {
+      // Process sectors sequentially to avoid overwhelming Cloudflare runtime
+      const updatedSectors = [...sectors];
+      
+      for (let i = 0; i < sectors.length; i++) {
+        // Check if we have enough time remaining
+        if (!checkTimeRemaining()) {
+          if (debug) console.log('⏰ Time limit approaching, skipping remaining sectors');
+          break;
+        }
+        
+        const sector = sectors[i];
+        if (Math.abs(sector.change) > 0.001) continue; // Skip sectors with data
+        
+        const sectorSymbols = SECTOR_SYMBOLS[sector.name] || [];
+        if (debug) console.log(`🔍 Individual fetch for ${sector.name}: ${sectorSymbols.slice(0, 4).join(', ')}`);
+        
+        // Limit to first 4 symbols to reduce load and stay within Cloudflare limits
+        const limitedSymbols = sectorSymbols.slice(0, 4);
+        
+        // Add timeout wrapper for individual requests
+        const fetchWithTimeout = async (symbol: string, timeoutMs = 3000) => {
+          return Promise.race([
+            yahooFinance.quote(symbol as any),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Timeout')), timeoutMs)
+            )
+          ]);
+        };
+        
+        // Fetch with limited concurrency (2 at a time)
+        const individualResults = [];
+        for (let j = 0; j < limitedSymbols.length; j += 2) {
+          const batch = limitedSymbols.slice(j, j + 2);
+          const batchResults = await Promise.allSettled(
+            batch.map(async (symbol) => {
               try {
-                const q: any = await yahooFinance.quote(symbol as any);
+                const q: any = await fetchWithTimeout(symbol, 2000); // 2 second timeout
                 const change = deriveChangePctFromQuote(q, debug);
                 if (debug && Math.abs(change) > 0.001) {
                   console.log(`💎 Individual fetch success: ${symbol} = ${change.toFixed(2)}%`);
@@ -289,38 +342,43 @@ export async function onRequestGet(context: { request: Request }) {
               }
             })
           );
+          individualResults.push(...batchResults);
           
-          const validResults = individualResults
-            .filter((result): result is PromiseFulfilledResult<{symbol: string, change: number, quote: any}> => 
-              result.status === 'fulfilled' && Math.abs(result.value.change) > 0.001
-            )
-            .map(result => result.value);
-          
-          if (validResults.length === 0) {
-            if (debug) console.log(`❌ No valid individual results for ${sector.name}`);
-            return sector;
+          // Small delay between batches to avoid rate limiting
+          if (j + 2 < limitedSymbols.length) {
+            await new Promise(resolve => setTimeout(resolve, 100));
           }
-          
-          // Take top 4 movers from individual results
-          const topStocks = validResults
-            .sort((a, b) => Math.abs(b.change) - Math.abs(a.change))
-            .slice(0, 4)
-            .map(r => ({ symbol: r.symbol, change: r.change }));
-          
-          const sectorChange = topStocks.reduce((acc, stock) => acc + stock.change, 0);
-          
-          if (debug) {
-            console.log(`🎯 Emergency fetch success for ${sector.name}: ${sectorChange.toFixed(2)}%`);
-            console.log(`   Top stocks:`, topStocks.map(s => `${s.symbol}: ${s.change.toFixed(2)}%`).join(', '));
-          }
-          
-          return {
-            ...sector,
-            stocks: topStocks,
-            change: sectorChange
-          };
-        })
-      );
+        }
+        
+        const validResults = individualResults
+          .filter((result): result is PromiseFulfilledResult<{symbol: string, change: number, quote: any}> => 
+            result.status === 'fulfilled' && Math.abs(result.value.change) > 0.001
+          )
+          .map(result => result.value);
+        
+        if (validResults.length === 0) {
+          if (debug) console.log(`❌ No valid individual results for ${sector.name}`);
+          continue;
+        }
+        
+        // Take all valid results (already limited to 4)
+        const topStocks = validResults
+          .sort((a, b) => Math.abs(b.change) - Math.abs(a.change))
+          .map(r => ({ symbol: r.symbol, change: r.change }));
+        
+        const sectorChange = topStocks.reduce((acc, stock) => acc + stock.change, 0);
+        
+        if (debug) {
+          console.log(`🎯 Emergency fetch success for ${sector.name}: ${sectorChange.toFixed(2)}%`);
+          console.log(`   Top stocks:`, topStocks.map(s => `${s.symbol}: ${s.change.toFixed(2)}%`).join(', '));
+        }
+        
+        updatedSectors[i] = {
+          ...sector,
+          stocks: topStocks,
+          change: sectorChange
+        };
+      }
       
       return updatedSectors;
     };
@@ -348,22 +406,39 @@ export async function onRequestGet(context: { request: Request }) {
         Energy: 4,
       };
       const items: Array<{ name: string; change: number; marketCap: number; stocks: any[] }> = [];
-      for (const [name, etf] of Object.entries(SECTOR_ETF)) {
+      
+      // Process ETFs with timeout and limited concurrency for Cloudflare
+      const etfEntries = Object.entries(SECTOR_ETF);
+      for (let i = 0; i < etfEntries.length; i++) {
+        const [name, etf] = etfEntries[i];
         try {
-          const now = Date.now();
-          const dayMs = 24 * 60 * 60 * 1000;
-          const res: any = await yahooFinance.chart(etf, {
-            period1: new Date(now - 7 * dayMs),
-            period2: new Date(now),
+          // Add timeout for ETF chart requests
+          const chartPromise = yahooFinance.chart(etf, {
+            period1: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+            period2: new Date(),
             interval: '1d' as any,
           });
+          
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('ETF timeout')), 3000)
+          );
+          
+          const res: any = await Promise.race([chartPromise, timeoutPromise]);
           const quotes = Array.isArray(res?.quotes) ? res.quotes : [];
           const closes = quotes.map((q: any) => Number(q.close)).filter((n: number) => Number.isFinite(n));
           const last = closes[closes.length - 1];
           const prev = closes[closes.length - 2];
           const changePct = Number.isFinite(last) && Number.isFinite(prev) && prev !== 0 ? ((last - prev) / prev) * 100 : 0;
           items.push({ name, change: changePct, marketCap: WEIGHTS[name] * 1_000_000_000_000, stocks: [] });
-        } catch {
+          
+          if (debug) console.log(`📊 ETF ${etf} for ${name}: ${changePct.toFixed(2)}%`);
+          
+          // Small delay between ETF requests
+          if (i < etfEntries.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+        } catch (error) {
+          if (debug) console.log(`❌ ETF ${etf} failed:`, error);
           items.push({ name, change: 0, marketCap: WEIGHTS[name] * 1_000_000_000_000, stocks: [] });
         }
       }
