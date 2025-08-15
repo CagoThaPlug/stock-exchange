@@ -256,12 +256,11 @@ export function MarketOverview() {
           {indices.map((index, i) => (
             <div
               key={index.symbol}
-              className="bg-background/50 backdrop-blur-sm rounded-xl p-4 border border-border/50 hover:shadow-lg hover:border-primary/20 transition-all duration-300 group animate-fade-in"
-              style={{ animationDelay: `${i * 50}ms` }}
+              className="bg-background/50 backdrop-blur-sm rounded-xl p-4 border border-border/50"
             >
               <div className="flex items-center justify-between mb-3">
                 <div>
-                  <h3 className="font-semibold text-sm group-hover:text-primary transition-colors">{index.name || index.symbol}</h3>
+                  <h3 className="font-semibold text-sm">{index.name || index.symbol}</h3>
                   <p className="text-xs text-muted-foreground font-mono">{index.symbol}</p>
                 </div>
                 <div className={`p-2 rounded-lg transition-all duration-300 ${

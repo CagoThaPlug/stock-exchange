@@ -98,7 +98,9 @@ export default function Home() {
             <div className="space-y-8">
               {/* Hero Section - Market Overview with enhanced spacing */}
               <section className="market-overview animate-fade-in">
-                <MarketOverview />
+                <div className="card-elevated">
+                  <MarketOverview />
+                </div>
               </section>
 
               {/* Primary Analysis Section - Stock Search with prominence */}
@@ -111,12 +113,16 @@ export default function Home() {
                 <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
                   {/* Market Heatmap - Premium placement */}
                   <div className="xl:col-span-3 order-1">
-                    <MarketHeatmap />
+                    <div className="card-elevated">
+                      <MarketHeatmap />
+                    </div>
                   </div>
                   
                   {/* Trending Stocks - Companion panel */}
                   <div className="xl:col-span-2 order-2">
-                    <TrendingStocks />
+                    <div className="card-elevated">
+                      <TrendingStocks />
+                    </div>
                   </div>
                 </div>
               </section>
@@ -138,7 +144,9 @@ export default function Home() {
                     <MarketOverview />
                   </div>
                   <div className="animate-fade-in" style={{ animationDelay: '150ms' }}>
-                    <TrendingStocks />
+                    <div className="card-elevated">
+                      <TrendingStocks />
+                    </div>
                   </div>
                 </div>
                 
@@ -148,7 +156,9 @@ export default function Home() {
                     <StockSearch />
                   </div>
                   <div className="animate-fade-in" style={{ animationDelay: '200ms' }}>
-                    <MarketHeatmap />
+                    <div className="card-elevated">
+                      <MarketHeatmap />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -172,13 +182,17 @@ export default function Home() {
                 <div className="grid grid-cols-1 lg:grid-cols-4 xl:grid-cols-5 gap-6">
                   {/* Enhanced Heatmap - Prominent Display */}
                   <div className="lg:col-span-3 xl:col-span-3 order-1">
-                    <MarketHeatmap />
+                    <div className="card-elevated">
+                      <MarketHeatmap />
+                    </div>
                   </div>
                   
                   {/* Market Movers - Side Panel */}
                   <div className="lg:col-span-1 xl:col-span-2 order-2 space-y-6">
-                    <TrendingStocks />
-                    <div className="lg:block xl:hidden">
+                    <div className="card-elevated">
+                      <TrendingStocks />
+                    </div>
+                    <div className="lg:block xl:hidden transition-transform duration-200 transform-gpu will-change-transform hover:scale-[1.01]">
                       <MarketOverview />
                     </div>
                   </div>
@@ -189,7 +203,9 @@ export default function Home() {
               <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                 {/* Market Overview - Supporting role in analysis layout */}
                 <div className="xl:col-span-1 hidden xl:block animate-fade-in" style={{ animationDelay: '200ms' }}>
-                  <MarketOverview />
+                  <div className="card-elevated">
+                    <MarketOverview />
+                  </div>
                 </div>
                 
                 {/* News Feed - Takes remaining space */}

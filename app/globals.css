@@ -188,7 +188,11 @@
   }
 
   .card-interactive {
-    @apply transition-all duration-300 hover:shadow-xl hover:scale-[1.01] hover:border-primary/20;
+    @apply transition-colors duration-200 ease-out;
+  }
+  
+  .card-interactive:hover {
+    @apply border-primary/30 bg-accent/5;
   }
 
   /* Responsive container utilities */
