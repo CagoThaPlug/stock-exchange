@@ -36,19 +36,44 @@ export async function GET(req: NextRequest) {
     const symbolToQuote = new Map<string, Quote>();
     for (const q of quotes) if (q?.symbol) symbolToQuote.set(q.symbol, q);
 
-    // Derive a robust change percent from quote fields with sensible fallbacks
+    // Enhanced robust change percent calculation with multiple fallback methods
     const deriveChangePctFromQuote = (q: Quote): number => {
+      // Try regularMarketChangePercent first (most reliable when present)
       const pct = Number((q as any)?.regularMarketChangePercent);
-      if (Number.isFinite(pct) && pct !== 0) return pct;
+      if (Number.isFinite(pct) && Math.abs(pct) > 0.001) return pct;
+      
+      // Try alternative percent fields
+      const postPct = Number((q as any)?.postMarketChangePercent);
+      if (Number.isFinite(postPct) && Math.abs(postPct) > 0.001) return postPct;
+      
+      const prePct = Number((q as any)?.preMarketChangePercent);
+      if (Number.isFinite(prePct) && Math.abs(prePct) > 0.001) return prePct;
+      
+      // Calculate from change and previous close
       const change = Number((q as any)?.regularMarketChange);
       const prevClose = Number((q as any)?.regularMarketPreviousClose);
-      const price = Number((q as any)?.regularMarketPrice);
-      if (Number.isFinite(change) && Number.isFinite(prevClose) && prevClose !== 0) {
-        return (change / prevClose) * 100;
+      if (Number.isFinite(change) && Number.isFinite(prevClose) && Math.abs(prevClose) > 0.001) {
+        const calcPct = (change / prevClose) * 100;
+        if (Number.isFinite(calcPct) && Math.abs(calcPct) > 0.001) return calcPct;
       }
-      if (Number.isFinite(price) && Number.isFinite(prevClose) && prevClose !== 0) {
-        return ((price - prevClose) / prevClose) * 100;
+      
+      // Calculate from current price and previous close
+      const price = Number((q as any)?.regularMarketPrice || (q as any)?.price);
+      if (Number.isFinite(price) && Number.isFinite(prevClose) && Math.abs(prevClose) > 0.001) {
+        const calcPct = ((price - prevClose) / prevClose) * 100;
+        if (Number.isFinite(calcPct) && Math.abs(calcPct) > 0.001) return calcPct;
       }
+      
+      // Try bid/ask spread calculation as last resort
+      const bid = Number((q as any)?.bid);
+      const ask = Number((q as any)?.ask);
+      if (Number.isFinite(bid) && Number.isFinite(ask) && Number.isFinite(prevClose) && Math.abs(prevClose) > 0.001) {
+        const midPrice = (bid + ask) / 2;
+        const calcPct = ((midPrice - prevClose) / prevClose) * 100;
+        if (Number.isFinite(calcPct) && Math.abs(calcPct) > 0.001) return calcPct;
+      }
+      
+      // Return original percent if it exists, even if small/zero
       return Number.isFinite(pct) ? pct : 0;
     };
 
@@ -110,40 +135,80 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    // Second-pass enrichment: for any stock with 0 change, try to refill from a fresh quote
-    // to reduce 0.00% placeholders when upstream omitted percent fields.
-    for (let i = 0; i < sectors.length; i++) {
-      const s = sectors[i];
-      const zeroes = s.stocks.filter((x) => !Number.isFinite(x.change) || x.change === 0).map((x) => x.symbol);
-      if (zeroes.length === 0) continue;
-      for (let j = 0; j < s.stocks.length; j++) {
-        const sym = s.stocks[j].symbol;
-        if (!zeroes.includes(sym)) continue;
-        try {
-          const q: any = await yahooFinance.quote(sym as any).catch(() => null);
-          if (q) {
-            const candidates = [
-              Number(q?.regularMarketChangePercent),
-              Number(q?.postMarketChangePercent),
-              Number(q?.preMarketChangePercent),
-            ];
-            let pct = candidates.find((v) => Number.isFinite(v)) as number | undefined;
-            if (!Number.isFinite(pct as number)) {
-              const change = Number(q?.regularMarketChange ?? NaN);
-              const prev = Number(q?.regularMarketPreviousClose ?? NaN);
-              const price = Number(q?.regularMarketPrice ?? NaN);
-              if (Number.isFinite(change) && Number.isFinite(prev) && prev !== 0) pct = (change / prev) * 100;
-              else if (Number.isFinite(price) && Number.isFinite(prev) && prev !== 0) pct = ((price - prev) / prev) * 100;
-            }
-            if (Number.isFinite(pct as number) && (pct as number) !== 0) {
-              s.stocks[j].change = pct as number;
+    // Enhanced second-pass: retry individual quotes for stocks with missing/zero data
+    // Use timeout and parallel fetching to prevent blocking
+    const retryStockWithTimeout = async (symbol: string): Promise<number> => {
+      const timeoutId = setTimeout(() => {
+        throw new Error('Quote timeout');
+      }, 3000); // 3 second timeout
+      
+      try {
+        const q: any = await yahooFinance.quote(symbol as any).catch(() => null);
+        clearTimeout(timeoutId);
+        
+        if (q) {
+          const pct = deriveChangePctFromQuote(q);
+          if (Math.abs(pct) > 0.001) return pct;
+        }
+        
+        // Fallback to chart data if quote fails
+        const now = Date.now();
+        const dayMs = 24 * 60 * 60 * 1000;
+        const chartRes: any = await yahooFinance.chart(symbol, {
+          period1: new Date(now - 3 * dayMs),
+          period2: new Date(now),
+          interval: '1d',
+        } as any).catch(() => null);
+        
+        if (chartRes?.quotes?.length >= 2) {
+          const quotes = chartRes.quotes;
+          const last = Number(quotes[quotes.length - 1]?.close);
+          const prev = Number(quotes[quotes.length - 2]?.close);
+          if (Number.isFinite(last) && Number.isFinite(prev) && Math.abs(prev) > 0.001) {
+            return ((last - prev) / prev) * 100;
+          }
+        }
+      } catch {
+        clearTimeout(timeoutId);
+      }
+      
+      return 0;
+    };
+
+    // Process sectors in parallel with limited concurrency
+    const enhancedSectors = await Promise.all(
+      sectors.map(async (sector) => {
+        const problematicStocks = sector.stocks.filter((stock) => 
+          !Number.isFinite(stock.change) || Math.abs(stock.change) < 0.001
+        );
+        
+        if (problematicStocks.length === 0) return sector;
+        
+        // Retry up to 3 stocks per sector to avoid excessive API calls
+        const stocksToRetry = problematicStocks.slice(0, 3);
+        const retryResults = await Promise.allSettled(
+          stocksToRetry.map((stock) => retryStockWithTimeout(stock.symbol))
+        );
+        
+        const updatedStocks = sector.stocks.map((stock) => {
+          const retryIndex = stocksToRetry.findIndex((s) => s.symbol === stock.symbol);
+          if (retryIndex >= 0) {
+            const result = retryResults[retryIndex];
+            if (result.status === 'fulfilled' && Math.abs(result.value) > 0.001) {
+              return { ...stock, change: result.value };
             }
           }
-        } catch {}
-      }
-      // Recompute sector change as sum of shown movers
-      s.change = s.stocks.reduce((acc, x) => acc + (Number.isFinite(x.change) ? x.change : 0), 0);
-    }
+          return stock;
+        });
+        
+        // Recompute sector change with updated stock data
+        const sectorChange = updatedStocks.reduce((acc, stock) => acc + (Number.isFinite(stock.change) ? stock.change : 0), 0);
+        
+        return { ...sector, stocks: updatedStocks, change: sectorChange };
+      })
+    );
+    
+    sectors = enhancedSectors;
 
     // Fallback: if we failed to get any stock-level data (e.g., quote 401), use sector ETFs to estimate
     const noData = sectors.every((s) => !s.marketCap || s.marketCap === 0);

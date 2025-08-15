@@ -225,9 +225,22 @@ export function MarketHeatmap() {
                     <p className="font-bold text-sm">{stock.symbol}</p>
                     <div className="w-1.5 h-1.5 rounded-full bg-primary/60" />
                   </div>
-                  <div className={`flex items-center justify-center space-x-1 text-sm font-medium ${stock.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {getChangeIcon(stock.change)}
-                    <span>{stock.change >= 0 ? '+' : ''}{Number.isFinite(stock.change) ? stock.change.toFixed(2) : '0.00'}%</span>
+                  <div className={`flex items-center justify-center space-x-1 text-sm font-medium ${
+                    !Number.isFinite(stock.change) || Math.abs(stock.change) < 0.001 
+                      ? 'text-muted-foreground' 
+                      : stock.change >= 0 ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {!Number.isFinite(stock.change) || Math.abs(stock.change) < 0.001 ? (
+                      <Activity className="w-3.5 h-3.5" />
+                    ) : (
+                      getChangeIcon(stock.change)
+                    )}
+                    <span>
+                      {!Number.isFinite(stock.change) || Math.abs(stock.change) < 0.001 
+                        ? '—' 
+                        : `${stock.change >= 0 ? '+' : ''}${stock.change.toFixed(2)}%`
+                      }
+                    </span>
                   </div>
                 </button>
               ))}
