@@ -8,6 +8,7 @@ import { usePreferences } from '@/components/providers/PreferencesProvider';
 import { formatCurrency, formatCompactCurrency, formatCompactNumber } from '@/lib/format';
 import { translate } from '@/lib/i18n';
 import { useCurrency } from '@/components/providers/CurrencyProvider';
+import { MarketQuote, ChartDataPoint, SearchResult } from '@/types/common';
 
 // Lazy-load recharts components individually to reduce bundle size
 const LazyResponsiveContainer = React.lazy(() => 
@@ -32,32 +33,14 @@ const LazyCartesianGrid = React.lazy(() =>
   import('recharts').then(module => ({ default: module.CartesianGrid }))
 );
 
-interface StockQuote {
-  symbol: string;
-  name: string;
-  price: number;
-  change: number;
-  changePercent: number;
-  volume: number;
-  marketCap: number;
-  sector: string;
-}
+// Using common types from @/types/common
+type StockQuote = MarketQuote & { sector: string };
+type ChartData = ChartDataPoint;
 
-interface ChartData {
-  time: string;
-  price: number;
-}
-
-interface SearchResult {
-  symbol: string;
-  name: string;
-  exchange?: string;
-}
-
-// Memoized debounce function to prevent recreation on every render
-const createDebounce = <F extends (...args: any[]) => void>(fn: F, delayMs: number) => {
+// Optimized debounce function with proper typing
+const createDebounce = <T extends (...args: any[]) => void>(fn: T, delayMs: number) => {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
-  return (...args: Parameters<F>) => {
+  return (...args: Parameters<T>) => {
     if (timeoutId) clearTimeout(timeoutId);
     timeoutId = setTimeout(() => fn(...args), delayMs);
   };
@@ -482,7 +465,7 @@ export function StockSearch() {
       },
       marketCap: {
         title: translate(preferences.language, 'search.marketCap', 'Market Cap'),
-        value: selectedStock.marketCap > 0
+        value: selectedStock.marketCap && selectedStock.marketCap > 0
           ? formatCompactCurrency(convertFromUSD(selectedStock.marketCap), { locale: preferences.locale, currency: preferences.currency })
           : '—',
       }

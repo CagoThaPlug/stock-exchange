@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { usePreferences } from '@/components/providers/PreferencesProvider';
 import { formatCurrency } from '@/lib/format';
 import { translate } from '@/lib/i18n';
@@ -18,7 +18,6 @@ interface MarketIndex {
 
 export function MarketOverview() {
   const [isMarketOpen, setIsMarketOpen] = useState(false);
-  const [marketStatus, setMarketStatus] = useState('');
   const [timeUntilOpen, setTimeUntilOpen] = useState<string>('');
   const { preferences } = usePreferences();
   const { convertFromUSD } = useCurrency();
@@ -28,7 +27,6 @@ export function MarketOverview() {
     indices: rawIndices, 
     loading, 
     error, 
-    refresh, 
     marketStatus: unifiedMarketStatus 
   } = useIndicesData({
     updateInterval: 30000,
@@ -49,21 +47,17 @@ export function MarketOverview() {
     !isNaN(index.price)
   ).slice(0, 3); // Limit to 3 indices for the overview
 
-  // Helper function to safely format numbers
-  const safeToFixed = (value: number | null, digits: number = 2): string => {
-    return value !== null && !isNaN(value) ? value.toFixed(digits) : '0.00';
-  };
-
-  // Helper function to safely get change sign
-  const getChangeSign = (value: number | null): string => {
-    if (value === null || isNaN(value)) return '';
-    return value >= 0 ? '+' : '';
-  };
-
-  // Helper function to determine if value is positive
-  const isPositive = (value: number | null): boolean => {
-    return value !== null && !isNaN(value) && value >= 0;
-  };
+  // Consolidated helper functions
+  const formatHelpers = useMemo(() => ({
+    safeToFixed: (value: number | null, digits: number = 2): string => 
+      value !== null && !isNaN(value) ? value.toFixed(digits) : '0.00',
+    
+    getChangeSign: (value: number | null): string => 
+      value !== null && !isNaN(value) && value >= 0 ? '+' : '',
+    
+    isPositive: (value: number | null): boolean => 
+      value !== null && !isNaN(value) && value >= 0
+  }), []);
 
   // Helper to get current New York (America/New_York) time parts
   type NYTimeParts = { weekdayIndex: number; hour: number; minute: number; second: number };
@@ -141,12 +135,7 @@ export function MarketOverview() {
         marketOpen = !isWeekendNY && isBusinessHoursNY;
       }
       
-      setIsMarketOpen(marketOpen);
-      setMarketStatus(
-        marketOpen
-          ? translate(preferences.language, 'market.open', 'Market Open')
-          : translate(preferences.language, 'market.closed', 'Market Closed')
-      );
+              setIsMarketOpen(marketOpen);
     };
 
     updateMarketStatus();
@@ -276,11 +265,11 @@ export function MarketOverview() {
                   <p className="text-xs text-muted-foreground font-mono">{index.symbol}</p>
                 </div>
                 <div className={`p-2 rounded-lg transition-all duration-300 ${
-                  isPositive(index.change) 
+                  formatHelpers.isPositive(index.change) 
                     ? 'bg-green-100 dark:bg-green-900/50 group-hover:bg-green-200 dark:group-hover:bg-green-900/70' 
                     : 'bg-red-100 dark:bg-red-900/50 group-hover:bg-red-200 dark:group-hover:bg-red-900/70'
                 }`}>
-                  {isPositive(index.change) ? (
+                  {formatHelpers.isPositive(index.change) ? (
                     <TrendingUp className="w-4 h-4 text-green-600 dark:text-green-400" />
                   ) : (
                     <TrendingDown className="w-4 h-4 text-red-600 dark:text-red-400" />
@@ -302,18 +291,18 @@ export function MarketOverview() {
                 </p>
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                   <span className={`text-xs font-semibold px-2 py-1 rounded-full w-fit ${
-                    isPositive(index.change) 
+                    formatHelpers.isPositive(index.change) 
                       ? 'text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/30' 
                       : 'text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/30'
                   }`}>
-                    {getChangeSign(index.change)}{safeToFixed(index.change)}
+                    {formatHelpers.getChangeSign(index.change)}{formatHelpers.safeToFixed(index.change)}
                   </span>
                   <span className={`text-xs font-medium ${
-                    isPositive(index.changePercent) 
+                    formatHelpers.isPositive(index.changePercent) 
                       ? 'text-green-600 dark:text-green-400' 
                       : 'text-red-600 dark:text-red-400'
                   }`}>
-                    ({getChangeSign(index.changePercent)}{safeToFixed(index.changePercent)}%)
+                    ({formatHelpers.getChangeSign(index.changePercent)}{formatHelpers.safeToFixed(index.changePercent)}%)
                   </span>
                 </div>
               </div>

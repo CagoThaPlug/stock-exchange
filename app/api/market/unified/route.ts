@@ -195,10 +195,8 @@ function generateDynamicHeatmap(gainers: any[], losers: any[], actives: any[], d
     const estimatedMarketCap = (marketCapMultipliers[sectorName] || 5) * 1_000_000_000_000;
 
     if (debug) {
-      console.log(`🏢 Sector ${sectorName}: ${avgChange.toFixed(2)}% (${stocks.length} stocks)`);
-      stocks.forEach(stock => {
-        console.log(`  - ${stock.symbol}: ${stock.change.toFixed(2)}%`);
-      });
+      console.log(`🏢 Sector ${sectorName}: ${avgChange.toFixed(2)}% (${stocks.length} stocks)`, 
+        stocks.map(s => `${s.symbol}: ${s.change.toFixed(2)}%`).join(', '));
     }
 
     return {
