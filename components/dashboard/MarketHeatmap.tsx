@@ -31,39 +31,31 @@ export function MarketHeatmap() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const debug = process.env.NEXT_PUBLIC_API_DEBUG ? '?debug=1' : '';
+        const debug = process.env.NEXT_PUBLIC_API_DEBUG ? '&debug=1' : '';
         const { apiFetch } = await import('@/lib/utils');
-        const res = await apiFetch(`/api/market/heatmap${debug}`);
+        // Use unified API for heatmap data
+        const res = await apiFetch(`/api/market/unified?mode=incremental&section=heatmap${debug}`);
         const data = await res.json();
 
-        const normalize = (raw: any): SectorData[] => {
-          if (Array.isArray(raw)) {
-            return raw.map((s: any) => ({
-              name: translate(preferences.language, `sector.${String(s.name || '').toLowerCase()}`, s.name || ''),
-              change: Number(s.change ?? 0),
-              marketCap: Number(s.marketCap ?? 0),
-              stocks: Array.isArray(s.stocks)
-                ? s.stocks.map((x: any) => ({ symbol: x.symbol, change: Number(x.change ?? 0) }))
-                : [],
-            }));
+        const normalize = (apiData: any): SectorData[] => {
+          // The unified API returns data in incremental format: { type: 'heatmap', data: { sectors: [] }, timestamp: '' }
+          const sectorsData = apiData?.data?.sectors || apiData?.sectors || [];
+          
+          if (!Array.isArray(sectorsData)) {
+            return [];
           }
-          if (raw && typeof raw === 'object') {
-            const values = Object.values(raw as Record<string, any>);
-            return values.map((s: any) => ({
-              name: translate(preferences.language, `sector.${String(s.name || '').toLowerCase()}`, s.name || ''),
-              change: Number((s.change ?? s.changePercent) ?? 0),
-              marketCap: Number(s.marketCap ?? 0),
-              stocks: Array.isArray(s.stocks)
-                ? s.stocks.map((x: any) => ({ symbol: x.symbol, change: Number(x.change ?? 0) }))
-                : Array.isArray(s.topMovers)
-                  ? s.topMovers.map((x: any) => ({ symbol: x.symbol, change: Number((x.change ?? x.changePercent) ?? 0) }))
-                  : [],
-            }));
-          }
-          return [];
+          
+          return sectorsData.map((s: any) => ({
+            name: translate(preferences.language, `sector.${String(s.name || '').toLowerCase()}`, s.name || ''),
+            change: Number(s.change ?? 0),
+            marketCap: Number(s.marketCap ?? 0),
+            stocks: Array.isArray(s.stocks)
+              ? s.stocks.map((x: any) => ({ symbol: x.symbol, change: Number(x.change ?? 0) }))
+              : [],
+          }));
         };
 
-        const normalized = normalize(data?.sectors);
+        const normalized = normalize(data);
         if (cancelled) return;
         setSectors(normalized);
       } catch {
