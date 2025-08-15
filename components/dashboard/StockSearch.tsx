@@ -591,10 +591,15 @@ export function StockSearch() {
         <div className="space-y-6">
           {/* Stock Header */}
           <div className="flex items-start justify-between">
-            <div>
-              <h3 className="text-2xl font-bold">{selectedStock.symbol}</h3>
-              <p className="text-muted-foreground">{selectedStock.name}</p>
-              <p className="text-sm text-muted-foreground">{selectedStock.sector}</p>
+            <div className="flex items-start space-x-4">
+              <div className="flex-shrink-0 mt-1">
+                <StockIcon symbol={selectedStock.symbol} name={selectedStock.name} size={48} variant="remote" />
+              </div>
+              <div>
+                <h3 className="text-2xl font-bold">{selectedStock.symbol}</h3>
+                <p className="text-muted-foreground">{selectedStock.name}</p>
+                <p className="text-sm text-muted-foreground">{selectedStock.sector}</p>
+              </div>
             </div>
             <button
               onClick={() => setSelectedStock(null)}

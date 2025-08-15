@@ -207,7 +207,7 @@ function generateDynamicHeatmap(gainers: any[], losers: any[], actives: any[], d
       marketCap: estimatedMarketCap,
       stocks: stocks
     };
-  }).filter(Boolean); // Remove null entries
+  }).filter((sector): sector is NonNullable<typeof sector> => sector !== null); // Remove null entries with proper type guard
 
   // Sort sectors by absolute change (most volatile first)
   sectors.sort((a, b) => Math.abs(b.change) - Math.abs(a.change));
