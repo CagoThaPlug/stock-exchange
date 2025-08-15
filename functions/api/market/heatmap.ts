@@ -1,4 +1,5 @@
 import yahooFinance from '../../../lib/yahoo';
+import { marketDataService } from '../../../lib/market-data-service';
 
 // Simple sector → representative tickers map (large caps, diversified)
 const SECTOR_SYMBOLS: Record<string, string[]> = {
@@ -20,23 +21,32 @@ type Quote = {
 export async function onRequestGet(context: { request: Request }) {
   const { request } = context;
   
-  // Cloudflare Pages timeout wrapper (20 second limit)
-  const timeoutWrapper = async <T>(promise: Promise<T>, timeoutMs = 18000): Promise<T> => {
-    return Promise.race([
-      promise,
-      new Promise<never>((_, reject) => 
-        setTimeout(() => reject(new Error('Cloudflare function timeout')), timeoutMs)
-      )
-    ]);
-  };
-
   try {
-    const debug = new URL(request.url).searchParams.get('debug') === '1' || new URL(request.url).searchParams.get('debug') === 'true';
+    const data = await marketDataService.getMarketHeatmapData();
     
-    return await timeoutWrapper(executeHeatmapLogic(request, debug));
-  } catch (e) {
-    const body: any = { error: String((e as Error).message), sectors: [] };
-    return json(body, 200, debugHeaders(request));
+    if (!data.sectors || data.sectors.length === 0) {
+      throw new Error('No valid sector data available from any provider');
+    }
+
+    return new Response(JSON.stringify(data), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Access-Control-Allow-Origin': '*'
+      }
+    });
+  } catch (error) {
+    console.error('Heatmap API error:', error);
+    
+    return new Response(JSON.stringify({
+      error: error instanceof Error ? error.message : 'Unknown error',
+      sectors: [],
+      timestamp: Date.now()
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
 }
 
